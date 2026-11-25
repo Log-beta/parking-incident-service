@@ -1,6 +1,6 @@
 const express = require("express");
 const { randomUUID } = require("node:crypto");
-const { getIncidentById } = require("./src/repositories/dynamodb/incidentRepository");
+const { getIncidentById, saveIncident } = require("./src/repositories/dynamodb/incidentRepository");
 
 const app = express();
 const port = Number(process.env.PORT ?? 3003);
@@ -24,6 +24,26 @@ app.get("/", (req, res) => {
 
 app.get("/health", (req, res) => {
   res.json({ status: "ok", service, instanceId });
+});
+
+app.post("/incidents", async (req, res) => {
+  const description = req.body?.description;
+
+  if (typeof description !== "string" || description.trim() === "") {
+    return res.status(400).json({ message: "A description is required." });
+  }
+
+  try {
+    const incident = await saveIncident({
+      incident_id: randomUUID(),
+      description: description.trim()
+    });
+
+    return res.status(201).json(incident);
+  } catch (error) {
+    console.error("Failed to save incident report:", error);
+    return res.status(500).json({ message: "Failed to save incident report." });
+  }
 });
 
 app.get("/incidents/:id", async (req, res) => {

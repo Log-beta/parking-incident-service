@@ -1,0 +1,27 @@
+{
+  "name": "parking-incident-service",
+  "version": "1.0.0",
+  "description": "Parking Incident Management for Cloud-Based Parking Allocation Management System.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Log-beta/parking-incident-service.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Log-beta/parking-incident-service/issues"
+  },
+  "homepage": "https://github.com/Log-beta/parking-incident-service#readme",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1177.0",
+    "@aws-sdk/lib-dynamodb": "^3.1177.0",
+    "express": "^5.3.0"
+  }
+}

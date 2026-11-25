@@ -39,7 +39,7 @@ app.post("/api/incidents", async (req, res) => {
       description: description.trim()
     });
 
-    return res.status(201).json(incident);
+    return res.status(201).json({ success: true, data: incident });
   } catch (error) {
     console.error("Failed to save incident report:", error);
     return res.status(500).json({ message: "Failed to save incident report." });
@@ -54,7 +54,7 @@ app.get("/api/incidents/:id", async (req, res) => {
       return res.status(404).json({ message: "Incident report not found." });
     }
 
-    return res.json(incident);
+    return res.json({ success: true, data: incident });
   } catch (error) {
     console.error("Failed to retrieve incident report:", error);
     return res.status(500).json({ message: "Failed to retrieve incident report." });

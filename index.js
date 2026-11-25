@@ -1,3 +1,4 @@
+const { validateIncident } = require("./src/validation/incidentValidation");
 const express = require("express");
 const { randomUUID } = require("node:crypto");
 const { getIncidentById, saveIncident } = require("./src/repositories/dynamodb/incidentRepository");
@@ -27,16 +28,20 @@ app.get("/health", (req, res) => {
 });
 
 app.post("/api/incidents", async (req, res) => {
-  const description = req.body?.description;
-
-  if (typeof description !== "string" || description.trim() === "") {
-    return res.status(400).json({ success: false, error: { code: "DESCRIPTION_REQUIRED", message: "A description is required." } });
+  const error = validateIncident(req.body);
+  if (error) {
+    return res.status(400).json({ success: false, error });
   }
+
+  const { description, vehicle_plate, spot_id, incident_type } = req.body;
 
   try {
     const incident = await saveIncident({
       incident_id: randomUUID(),
-      description: description.trim()
+      description: description.trim(),
+      vehicle_plate: vehicle_plate.trim(),
+      spot_id: spot_id.trim(),
+      incident_type: incident_type.trim()
     });
 
     return res.status(201).json({ success: true, data: incident });

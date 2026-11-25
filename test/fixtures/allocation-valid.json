@@ -1,0 +1,9 @@
+{
+  "success": true,
+  "data": {
+    "reservation_id": "res_123",
+    "valid": true,
+    "spot_id": "A1",
+    "vehicle_plate": "ABC123"
+  }
+}

@@ -1,5 +1,6 @@
 ﻿const { getReservationValidity } = require("../services/allocationClient");
 const { verifyPermit } = require("../services/permitVerification");
+const { savePermitVerification } = require("../repositories/dynamodb/permitVerificationRepository");
 
 async function verifyIncidentPermit(req, res) {
   const { reservation_id, vehicle_plate, spot_id } = req.body ?? {};
@@ -26,7 +27,11 @@ async function verifyIncidentPermit(req, res) {
   }
 
   const reservationId = reservation_id.trim();
+  const vehiclePlate = vehicle_plate.trim();
+  const spotId = spot_id?.trim();
+
   let allocation;
+
   try {
     allocation = await getReservationValidity(reservationId);
   } catch (error) {
@@ -35,9 +40,21 @@ async function verifyIncidentPermit(req, res) {
 
   const result = verifyPermit(allocation, {
     reservationId,
-    vehiclePlate: vehicle_plate.trim(),
-    spotId: spot_id?.trim()
+    vehiclePlate,
+    spotId
   });
+
+  // Save the permit verification attempt to DynamoDB
+  try {
+    await savePermitVerification({
+      reservationId,
+      vehiclePlate,
+      spotId,
+      result
+    });
+  } catch (error) {
+    console.error("Permit verification logging error:", error.message);
+  }
 
   if (result === "unverified") {
     return res.status(503).json({

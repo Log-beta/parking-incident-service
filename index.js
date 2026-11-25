@@ -38,6 +38,8 @@ app.post("/api/incidents", async (req, res) => {
   try {
     const incident = await saveIncident({
       incident_id: randomUUID(),
+      status: "open",
+      created_at: new Date().toISOString(),
       description: description.trim(),
       vehicle_plate: vehicle_plate.trim(),
       spot_id: spot_id.trim(),

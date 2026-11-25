@@ -1,3 +1,4 @@
+const { verifyIncidentPermit } = require("./src/controllers/permitController");
 const { validateIncident } = require("./src/validation/incidentValidation");
 const express = require("express");
 const { randomUUID } = require("node:crypto");
@@ -26,6 +27,8 @@ app.get("/", (req, res) => {
 app.get("/health", (req, res) => {
   res.json({ status: "ok", service, instanceId });
 });
+
+app.post("/api/incidents/verify", verifyIncidentPermit);
 
 app.post("/api/incidents", async (req, res) => {
   const error = validateIncident(req.body);

@@ -31,16 +31,34 @@ report inside `data`. Older reports can omit fields added after their creation.
 An unknown ID returns `404 Not Found`:
 
 ```json
-{"success":false,"error":{"code":"INCIDENT_NOT_FOUND","message":"Incident report not found."}}
+{
+  "success": false,
+  "error": {
+    "code": "INCIDENT_NOT_FOUND",
+    "message": "Incident report not found."
+  }
+}
 ```
 
 ## Verify a parking permit
 
 `POST /api/incidents/verify`
 
-Example request: `{"reservation_id":"res_123","vehicle_plate":"ABC123","spot_id":"A1"}`
+### Example request
 
-`reservation_id` and `vehicle_plate` are required. Include `spot_id` when the occupied spot is known. Omit it to check only the reservation and plate.
+```json
+{
+  "reservation_id": "res_123",
+  "vehicle_plate": "ABC123",
+  "spot_id": "A1"
+}
+```
+
+`reservation_id` and `vehicle_plate` are required. Include `spot_id`
+when the occupied spot is known. Omit it to check only the reservation
+and plate.
+
+### Response status codes
 
 | HTTP status | Meaning |
 | --- | --- |
@@ -48,6 +66,121 @@ Example request: `{"reservation_id":"res_123","vehicle_plate":"ABC123","spot_id"
 | 400 | A required field is missing or invalid, or the supplied spot ID is blank or invalid. |
 | 503 | `PERMIT_UNVERIFIED`: reservation validity could not be confirmed. The frontend should show an unavailable result and allow a retry. |
 
-Example response: `{"success":true,"data":{"reservation_id":"res_123","result":"plate_mismatch"}}`
+### Example response
 
-Tested locally through the Incidents API with a mock Allocation service. Live team integration is pending.
+```json
+{
+  "success": true,
+  "data": {
+    "reservation_id": "res_123",
+    "result": "plate_mismatch"
+  }
+}
+```
+
+Tested locally through the Incidents API with a mock Allocation service.
+Live team integration is pending.
+
+## Permit verification logging
+
+Every permit verification attempt that passes request validation triggers
+a logging operation in the `PermitVerificationLogs` DynamoDB table.
+
+### Verification outcomes
+
+| Result | Description |
+| --- | --- |
+| `verified` | The reservation and presented details match. |
+| `invalid_reservation` | The reservation is confirmed to be invalid. |
+| `plate_mismatch` | The presented vehicle plate does not match the reservation. |
+| `spot_mismatch` | The presented parking spot does not match the reservation. |
+| `unverified` | Reservation validity could not be confirmed. |
+
+### Database structure
+
+Table name: `PermitVerificationLogs`
+
+Partition key: `verification_id` (String)
+
+Billing mode: `PAY_PER_REQUEST`
+
+| Attribute | Type | Description |
+| --- | --- | --- |
+| `verification_id` | String | Unique UUID and partition key. |
+| `reservation_id` | String | Reservation being verified. |
+| `vehicle_plate` | String | Presented vehicle license plate. |
+| `spot_id` | String | Optional parking spot identifier. |
+| `result` | String | Outcome of the verification attempt. |
+| `created_at` | String | UTC timestamp in ISO 8601 format. |
+
+### Example stored record
+
+```json
+{
+  "verification_id": "5bba9e2e-0613-47c0-aed8-0ca7a72dac37",
+  "reservation_id": "TEST-001",
+  "vehicle_plate": "ABC-123",
+  "spot_id": "A-01",
+  "result": "unverified",
+  "created_at": "2026-11-25T22:40:05.324Z"
+}
+```
+
+### Configuration
+
+| Environment variable | Default value |
+| --- | --- |
+| `PERMIT_VERIFICATION_LOGS_TABLE` | `PermitVerificationLogs` |
+
+The repository uses the shared DynamoDB client configuration.
+
+To explicitly configure the table in PowerShell:
+
+```powershell
+$env:PERMIT_VERIFICATION_LOGS_TABLE = "PermitVerificationLogs"
+```
+
+### Error handling
+
+Malformed requests returning HTTP 400 are not logged.
+
+If DynamoDB logging fails, the error is recorded in the server console,
+and the API continues to return the original verification response.
+
+This preserves service availability but may result in missing audit
+records during database outages.
+
+### Testing
+
+The following functionality is covered by automated tests:
+
+- All five verification outcomes.
+- Verification without an optional parking spot.
+- Unique verification ID generation.
+- UTC timestamp generation.
+- DynamoDB repository operations.
+- Database failure handling.
+- Malformed request handling.
+- Existing incident management functionality.
+
+Run the automated tests using:
+
+```powershell
+npm.cmd test
+```
+
+Current test results:
+
+| Metric | Result |
+| --- | --- |
+| Total tests | 28 |
+| Passed | 28 |
+| Failed | 0 |
+| Pass rate | 100% |
+
+Live logging of an unverified permit attempt was successfully confirmed
+using Floci and DynamoDB.
+
+Automated controller and repository tests use mocked external dependencies.
+
+Live integration with the actual Allocation microservice remains pending.

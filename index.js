@@ -26,7 +26,7 @@ app.get("/health", (req, res) => {
   res.json({ status: "ok", service, instanceId });
 });
 
-app.post("/incidents", async (req, res) => {
+app.post("/api/incidents", async (req, res) => {
   const description = req.body?.description;
 
   if (typeof description !== "string" || description.trim() === "") {
@@ -46,7 +46,7 @@ app.post("/incidents", async (req, res) => {
   }
 });
 
-app.get("/incidents/:id", async (req, res) => {
+app.get("/api/incidents/:id", async (req, res) => {
   try {
     const incident = await getIncidentById(req.params.id);
 

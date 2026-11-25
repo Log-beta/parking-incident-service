@@ -33,3 +33,21 @@ An unknown ID returns `404 Not Found`:
 ```json
 {"success":false,"error":{"code":"INCIDENT_NOT_FOUND","message":"Incident report not found."}}
 ```
+
+## Verify a parking permit
+
+`POST /api/incidents/verify`
+
+Example request: `{"reservation_id":"res_123","vehicle_plate":"ABC123","spot_id":"A1"}`
+
+`reservation_id` and `vehicle_plate` are required. Include `spot_id` when the occupied spot is known. Omit it to check only the reservation and plate.
+
+| HTTP status | Meaning |
+| --- | --- |
+| 200 | The check completed. Read `data.result`: `verified`, `plate_mismatch`, `spot_mismatch`, or `invalid_reservation`. |
+| 400 | A required field is missing or invalid, or the supplied spot ID is blank or invalid. |
+| 503 | `PERMIT_UNVERIFIED`: reservation validity could not be confirmed. The frontend should show an unavailable result and allow a retry. |
+
+Example response: `{"success":true,"data":{"reservation_id":"res_123","result":"plate_mismatch"}}`
+
+Tested locally through the Incidents API with a mock Allocation service. Live team integration is pending.

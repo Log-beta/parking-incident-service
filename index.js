@@ -61,6 +61,10 @@ app.get("/api/incidents/:id", async (req, res) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`${instanceId} listening on http://localhost:${port}`);
-});
+if (require.main === module) {
+  app.listen(port, () => {
+    console.log(`${instanceId} listening on http://localhost:${port}`);
+  });
+}
+
+module.exports = app;

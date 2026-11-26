@@ -1,3 +1,4 @@
+const { checkIncidentReservation } = require("./src/controllers/reservationCheckController");
 const { verifyTurnstile } = require("./src/services/turnstile");
 const { auditLog } = require("./src/utils/auditLogger");
 const { errorHandler } = require("./src/middleware/errorHandler");
@@ -161,6 +162,8 @@ app.get("/api/incidents", requireAuth, listMyReports);
 app.get("/api/incidents/admin/reports", requireAuth, requireAdmin, getAdminReports);
 
 app.patch("/api/incidents/:id/status", requireAuth, requireAdmin, updateIncidentStatus);
+
+app.get("/api/incidents/:id/reservation-check", requireAuth, requireAdmin, checkIncidentReservation);
 
 app.get("/api/incidents/:id", requireAuth, async (req, res) => {
   try {

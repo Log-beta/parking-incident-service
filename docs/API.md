@@ -718,3 +718,72 @@ These results do not demonstrate production bot protection.
 
 Frontend widget integration and final shared runtime
 configuration remain pending.
+
+## Administrator Reservation Assessment
+
+GET /api/incidents/:id/reservation-check
+
+Authentication: Cognito access token.
+Authorization: admin role required.
+
+The Incident Service retrieves the stored incident from
+DynamoDB and sends its vehicle plate and parking spot to:
+
+GET /api/allocation/internal/reservations/lookup
+
+Query parameters:
+- vehicle_plate
+- spot_id
+
+Internal authentication:
+Authorization: Bearer <INTERNAL_TOKEN>
+
+Example successful response:
+
+{
+  "success": true,
+  "data": {
+    "incident_id": "inc-1",
+    "result": "active_reservation_found",
+    "reservation_id": "res_123",
+    "checked_at": "2026-11-26T20:00:00.000Z"
+  }
+}
+
+Possible successful results:
+- active_reservation_found
+- no_active_reservation
+
+When no active reservation exists, reservation_id is null.
+
+HTTP responses:
+- 200: Reservation assessment completed.
+- 401: Missing or invalid authentication.
+- 403: Administrator permission required.
+- 404: Incident not found.
+- 429: Rate limit exceeded.
+- 500: Internal database or application failure.
+- 503: RESERVATION_UNVERIFIED.
+
+The assessment checks current reservation validity,
+not validity at the original incident time.
+
+Allocation errors and connection failures must never
+be interpreted as evidence of unauthorized parking.
+
+The endpoint does not modify incident status.
+Final investigation decisions remain with administrators.
+
+Existing configuration is reused:
+- ALLOCATION_URL
+- INTERNAL_TOKEN
+
+The previously documented pending lookup integration
+is now implemented and individually tested using mocks.
+
+Testing:
+- 15 reservation lookup client tests passed.
+- 7 administrator reservation assessment tests passed.
+- Full automated backend suite: 171 passed, 0 failed.
+
+Live Allocation integration remains pending.

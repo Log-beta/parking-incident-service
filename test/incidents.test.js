@@ -1337,3 +1337,165 @@ for (const [scenario, challenge, status, code] of turnstileCases) {
     assert.equal(databaseCall.mock.callCount(), 0);
   });
 }
+
+test("Reservation check requires authentication", async (t) => {
+  const db = require("../src/config/dynamodb");
+  const calls = t.mock.method(db, "send", async () => ({}));
+
+  const response = await fetch(`${url}/inc-1/reservation-check`);
+
+  assert.equal(response.status, 401);
+  assert.equal(calls.mock.callCount(), 0);
+});
+
+test("Regular users cannot perform incident reservation checks", async (t) => {
+  const db = require("../src/config/dynamodb");
+  const calls = t.mock.method(db, "send", async () => ({}));
+
+  const token = createCognitoToken({
+    sub: "user-1", role: "user"
+  });
+
+  const response = await fetch(`${url}/inc-1/reservation-check`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+
+  assert.equal(response.status, 403);
+  assert.equal(calls.mock.callCount(), 0);
+});
+
+test("Reservation check returns 404 for missing incidents", async (t) => {
+  const db = require("../src/config/dynamodb");
+  t.mock.method(db, "send", async () => ({}));
+
+  const token = createCognitoToken({
+    sub: "admin-1", role: "admin"
+  });
+
+  const response = await fetch(`${url}/missing/reservation-check`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+
+  assert.equal(response.status, 404);
+});
+
+const reservationCheckCases = [
+  ["active reservation", {
+    success: true,
+    data: {
+      valid: true,
+      reservation_id: "res_123",
+      vehicle_plate: "ABC123",
+      spot_id: "A1"
+    }
+  }, 200, "active_reservation_found"],
+
+  ["no active reservation", {
+    success: true,
+    data: {
+      valid: false,
+      reservation_id: null,
+      vehicle_plate: null,
+      spot_id: null
+    }
+  }, 200, "no_active_reservation"],
+
+  ["Allocation unavailable", null, 503, "RESERVATION_UNVERIFIED"]
+];
+
+for (const [scenario, allocation, expectedStatus, expected] of reservationCheckCases) {
+  test(`Admin reservation check handles ${scenario}`, async (t) => {
+    const db = require("../src/config/dynamodb");
+
+    const database = t.mock.method(db, "send", async () => ({
+      Item: {
+        incident_id: "inc-1",
+        vehicle_plate: "ABC123",
+        spot_id: "A1",
+        status: "under_review"
+      }
+    }));
+
+    const previousToken = process.env.INTERNAL_TOKEN;
+    process.env.INTERNAL_TOKEN = "dummy-admin-lookup-token";
+
+    t.after(() => {
+      if (previousToken === undefined) {
+        delete process.env.INTERNAL_TOKEN;
+      } else {
+        process.env.INTERNAL_TOKEN = previousToken;
+      }
+    });
+
+    const previousFetch = globalThis.fetch;
+    let lookupCalls = 0;
+
+    t.mock.method(globalThis, "fetch", async (input, options) => {
+      if (
+        input instanceof URL &&
+        input.pathname === "/api/allocation/internal/reservations/lookup"
+      ) {
+        lookupCalls++;
+
+        assert.equal(input.searchParams.get("vehicle_plate"), "ABC123");
+        assert.equal(input.searchParams.get("spot_id"), "A1");
+        assert.equal(
+          options.headers.Authorization,
+          "Bearer dummy-admin-lookup-token"
+        );
+
+        return allocation
+          ? Response.json(allocation)
+          : new Response(null, { status: 503 });
+      }
+
+      return previousFetch(input, options);
+    });
+
+    const token = createCognitoToken({
+      sub: "admin-1", role: "admin"
+    });
+
+    const response = await fetch(`${url}/inc-1/reservation-check`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    const body = await response.json();
+
+    assert.equal(response.status, expectedStatus);
+    assert.equal(database.mock.callCount(), 1);
+    assert.equal(lookupCalls, 1);
+
+    if (expectedStatus === 200) {
+      assert.equal(body.success, true);
+      assert.equal(body.data.result, expected);
+      assert.equal(body.data.incident_id, "inc-1");
+      assert.ok(!Number.isNaN(Date.parse(body.data.checked_at)));
+    } else {
+      assert.equal(body.success, false);
+      assert.equal(body.error.code, expected);
+    }
+  });
+}
+
+test("Reservation check handles database failures safely", async (t) => {
+  const db = require("../src/config/dynamodb");
+
+  t.mock.method(db, "send", async () => {
+    throw new Error("Simulated database failure");
+  });
+
+  const token = createCognitoToken({
+    sub: "admin-1", role: "admin"
+  });
+
+  const response = await fetch(`${url}/inc-1/reservation-check`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+
+  assert.equal(response.status, 500);
+  assert.equal(
+    (await response.json()).error.code,
+    "RESERVATION_CHECK_FAILED"
+  );
+});

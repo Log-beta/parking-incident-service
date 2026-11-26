@@ -3,6 +3,67 @@ const assert = require("node:assert/strict");
 const http = require("node:http");
 const { once } = require("node:events");
 
+const { after } = require("node:test");
+
+const jwt = require("jsonwebtoken");
+
+const { generateKeyPairSync } = require("node:crypto");
+
+const { publicKey, privateKey } = generateKeyPairSync("rsa", {
+  modulusLength: 2048
+});
+
+process.env.COGNITO_ISSUER = "https://example.test/cognito";
+process.env.COGNITO_CLIENT_ID = "test-parking";
+process.env.COGNITO_JWKS_URL = "https://example.test/jwks";
+
+const kid = "incidents-integration-test-key";
+
+const jwk = {
+  ...publicKey.export({ format: "jwk" }),
+  kid,
+  alg: "RS256",
+  use: "sig"
+};
+
+process.env.COGNITO_USERS_JSON = JSON.stringify({
+  "user-1": { user_id: "user-1", priority: 1 },
+  "user-2": { user_id: "user-2", priority: 1 },
+  "admin-1": { user_id: "admin-1", priority: 1 },
+  "admin-2": { user_id: "admin-2", priority: 1 }
+});
+
+const originalFetch = globalThis.fetch;
+
+globalThis.fetch = async (input, options) => {
+  if (input === process.env.COGNITO_JWKS_URL) {
+    return new Response(JSON.stringify({ keys: [jwk] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+
+  return originalFetch(input, options);
+};
+
+after(() => {
+  globalThis.fetch = originalFetch;
+});
+
+function createCognitoToken({ sub, role }) {
+  return jwt.sign({
+    sub,
+    iss: process.env.COGNITO_ISSUER,
+    client_id: process.env.COGNITO_CLIENT_ID,
+    token_use: "access",
+    "cognito:groups": [role]
+  }, privateKey, {
+    algorithm: "RS256",
+    keyid: kid,
+    expiresIn: "5m"
+  });
+}
+
 const app = require("../index");
 const db = require("../src/config/dynamodb");
 const valid = require("./fixtures/allocation-valid.json");
@@ -88,7 +149,8 @@ async function setup(t, allocationResponse, databaseFailure = false) {
     return fetch(url, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${createCognitoToken({ sub: "user-1", role: "user" })}`
       },
       body: JSON.stringify(body)
     });
@@ -160,7 +222,7 @@ for (const [scenario, allocation, input, expected, status] of cases) {
   });
 }
 
-test("controller logs verification without optional spot_id", async (t) => {
+test("controller rejects verification without a parking spot", async (t) => {
   const { verify, mockSend } = await setup(t, valid);
 
   const response = await verify({
@@ -168,15 +230,9 @@ test("controller logs verification without optional spot_id", async (t) => {
     vehicle_plate: "ABC123"
   });
 
-  assert.equal(response.status, 200);
-  assert.equal((await response.json()).data.result, "verified");
-  assert.equal(mockSend.mock.callCount(), 1);
-
-  const item =
-    mockSend.mock.calls[0].arguments[0].input.Item;
-
-  assert.equal(Object.hasOwn(item, "spot_id"), false);
-  assert.equal(item.result, "verified");
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).error.code, "SPOT_ID_REQUIRED");
+  assert.equal(mockSend.mock.callCount(), 0);
 });
 
 test("controller preserves verification response when logging fails", async (t) => {
@@ -196,5 +252,27 @@ test("controller does not log malformed requests", async (t) => {
 
   assert.equal(response.status, 400);
   assert.equal((await response.json()).error.code, "RESERVATION_ID_REQUIRED");
+  assert.equal(mockSend.mock.callCount(), 0);
+});
+
+
+test("controller rejects oversized and unsafe verification input", async (t) => {
+  const { verify, mockSend } = await setup(t, valid);
+
+  for (const input of [
+    { ...presented, reservation_id: "x".repeat(129) },
+    { ...presented, vehicle_plate: "x".repeat(21) },
+    { ...presented, spot_id: "x".repeat(51) },
+    { ...presented, vehicle_plate: "<script>" }
+  ]) {
+    const response = await verify(input);
+
+    assert.equal(response.status, 400);
+    assert.equal(
+      (await response.json()).error.code,
+      "INVALID_VERIFICATION_INPUT"
+    );
+  }
+
   assert.equal(mockSend.mock.callCount(), 0);
 });

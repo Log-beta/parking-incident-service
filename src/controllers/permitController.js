@@ -20,10 +20,25 @@ async function verifyIncidentPermit(req, res) {
     });
   }
 
-  if (spot_id !== undefined && (typeof spot_id !== "string" || !spot_id.trim())) {
+  if (typeof spot_id !== "string" || !spot_id.trim()) {
     return res.status(400).json({
       success: false,
-      error: { code: "INVALID_SPOT_ID", message: "Supply a nonblank spot ID or omit it." }
+      error: { code: "SPOT_ID_REQUIRED", message: "A parking spot ID is required." }
+    });
+  }
+
+  if (
+    reservation_id.trim().length > 128 ||
+    vehicle_plate.trim().length > 20 ||
+    spot_id.trim().length > 50 ||
+    [reservation_id, vehicle_plate, spot_id].some(value => /[<>]/.test(value))
+  ) {
+    return res.status(400).json({
+      success: false,
+      error: {
+        code: "INVALID_VERIFICATION_INPUT",
+        message: "Verification fields contain invalid or oversized input."
+      }
     });
   }
 

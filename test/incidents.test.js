@@ -1196,3 +1196,48 @@ test("duplicate incident rejection generates a safe audit event", async (t) => {
   assert.ok(!output.includes("DUP123"));
   assert.ok(!output.includes("Private duplicate description"));
 });
+
+test("Permit verification rejects unauthenticated requests", async () => {
+  const response = await fetch(`${url}/verify`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({})
+  });
+
+  assert.equal(response.status, 401);
+});
+
+test("Permit verification rejects invalid access tokens", async () => {
+  const response = await fetch(`${url}/verify`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer invalid-test-token"
+    },
+    body: JSON.stringify({})
+  });
+
+  assert.equal(response.status, 401);
+});
+
+test("Permit verification accepts authenticated user and admin roles", async () => {
+  for (const [sub, role] of [
+    ["user-1", "user"],
+    ["admin-1", "admin"]
+  ]) {
+    const token = createCognitoToken({ sub, role });
+
+    const response = await fetch(`${url}/verify`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({})
+    });
+
+    assert.equal(response.status, 400);
+    const body = await response.json();
+    assert.equal(body.error.code, "RESERVATION_ID_REQUIRED");
+  }
+});

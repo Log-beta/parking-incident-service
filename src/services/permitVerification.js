@@ -1,4 +1,4 @@
-﻿function hasText(value) {
+function hasText(value) {
   return typeof value === "string" && value.trim().length > 0;
 }
 
@@ -22,7 +22,7 @@ function verifyPermit(allocationResponse, { reservationId, vehiclePlate, spotId 
     !hasText(vehiclePlate) ||
     !hasText(reservation.vehicle_plate) ||
     !hasText(reservation.spot_id) ||
-    (spotId != null && !hasText(spotId))
+    !hasText(spotId)
   ) {
     return "unverified";
   }
@@ -31,7 +31,7 @@ function verifyPermit(allocationResponse, { reservationId, vehiclePlate, spotId 
     return "plate_mismatch";
   }
 
-  if (spotId != null && spotId !== reservation.spot_id) {
+  if (spotId !== reservation.spot_id) {
     return "spot_mismatch";
   }
 

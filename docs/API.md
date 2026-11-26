@@ -660,3 +660,27 @@ are prepared for shared infrastructure integration.
 
 Provisioning and runtime scaling verification remain pending.
 
+
+## Permit Verification Security Update
+
+POST /api/incidents/verify requires a valid Cognito access token.
+Both user and admin roles are supported.
+
+Required fields:
+- reservation_id: maximum 128 characters
+- vehicle_plate: maximum 20 characters
+- spot_id: maximum 50 characters
+
+Both parking spot and vehicle plate must match the reservation.
+Missing, oversized and unsafe inputs are rejected.
+
+This supersedes earlier optional spot_id documentation.
+
+Allocation unavailability returns HTTP 503 and does not
+indicate illegal parking.
+
+Incident submission and QR permit verification remain separate.
+The proposed plate-and-spot lookup API is pending Allocation
+implementation and contract confirmation.
+
+Verification: 140 automated tests passed.

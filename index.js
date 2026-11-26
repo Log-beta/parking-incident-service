@@ -58,7 +58,7 @@ app.get("/health", (req, res) => {
   res.json({ status: "ok", service, instanceId });
 });
 
-app.post("/api/incidents/verify", verifyIncidentPermit);
+app.post("/api/incidents/verify", requireAuth, verifyIncidentPermit);
 
 app.post("/api/incidents", requireAuth, async (req, res) => {
   const error = validateIncident(req.body);

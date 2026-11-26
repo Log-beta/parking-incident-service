@@ -1,4 +1,4 @@
-﻿const test = require("node:test");
+const test = require("node:test");
 const assert = require("node:assert/strict");
 const { verifyPermit } = require("../src/services/permitVerification");
 const valid = require("./fixtures/allocation-valid.json");
@@ -21,7 +21,7 @@ const invalid = {
 
 const cases = [
   ["matching plate and spot", valid, presented, "verified"],
-  ["spot omitted", valid, { reservationId: "res_123", vehiclePlate: "ABC123" }, "verified"],
+  ["spot omitted", valid, { reservationId: "res_123", vehiclePlate: "ABC123" }, "unverified"],
   ["different plate", valid, { ...presented, vehiclePlate: "XYZ789" }, "plate_mismatch"],
   ["different spot", valid, { ...presented, spotId: "A2" }, "spot_mismatch"],
   ["invalid reservation", invalid, presented, "invalid_reservation"],

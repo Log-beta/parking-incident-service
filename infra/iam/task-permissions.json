@@ -1,0 +1,28 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "IncidentDatabaseAccess",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:Query",
+        "dynamodb:Scan"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:us-east-1:000000000000:table/IncidentReports",
+        "arn:aws:dynamodb:us-east-1:000000000000:table/IncidentReports/index/*",
+        "arn:aws:dynamodb:us-east-1:000000000000:table/IncidentDuplicateKeys",
+        "arn:aws:dynamodb:us-east-1:000000000000:table/PermitVerificationLogs"
+      ]
+    },
+    {
+      "Sid": "RuntimeSecretAccess",
+      "Effect": "Allow",
+      "Action": "secretsmanager:GetSecretValue",
+      "Resource": "arn:aws:secretsmanager:us-east-1:000000000000:secret:parking/incidents/runtime-*"
+    }
+  ]
+}

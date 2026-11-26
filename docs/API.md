@@ -585,3 +585,21 @@ against the local Floci environment.
 Actual shared credentials remain pending.
 Secret values are not written to application logs.
 
+
+## AWS IAM
+
+The Incident Service uses two dedicated ECS roles:
+
+- parking-incidents-task-role
+- parking-incidents-execution-role
+
+The task role grants scoped access to incident DynamoDB tables
+and the runtime Secrets Manager secret.
+
+The execution role grants CloudWatch log stream creation
+and log event publishing permissions.
+
+Both roles and their inline policies were provisioned and
+verified in Floci. Actual IAM permission enforcement remains
+unverified.
+

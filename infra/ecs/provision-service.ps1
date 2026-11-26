@@ -70,4 +70,3 @@ aws application-autoscaling put-scaling-policy `
 if ($LASTEXITCODE -ne 0) {
     throw "Scaling policy creation failed."
 }
-

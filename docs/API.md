@@ -1,6 +1,12 @@
-﻿# Parking Incident Reports API
+# Parking Incident Reports API
 
 Local base URL: `http://localhost:3003/api/incidents`
+
+## Authentication for incident reports
+
+Creating, listing and retrieving reports require the `Authorization: Bearer <access-token>`
+header. A missing, invalid or expired token returns `401 Unauthorized`. The service
+uses the verified token's `sub` claim as the user ID.
 
 ## Create an incident
 
@@ -15,29 +21,40 @@ Local base URL: `http://localhost:3003/api/incidents`
 }
 ```
 
-A successful request returns `201 Created` with `success: true` and the saved
-report inside `data`. The server generates `incident_id`, sets `status` to
-`open`, and records `created_at` in UTC.
+A successful request returns `201 Created` with the saved report in `data`.
+The server assigns `user_id` from the token, generates `incident_id`, sets
+`status` to `open`, and records `created_at` in UTC. A `user_id` supplied in
+the body cannot override the owner.
 
 Invalid input returns `400 Bad Request` with the first applicable error code:
 `DESCRIPTION_REQUIRED`, `VEHICLE_PLATE_REQUIRED`, `SPOT_ID_REQUIRED`, or
 `INCIDENT_TYPE_REQUIRED`.
 
+## List my reports
+
+`GET /api/incidents` returns up to 25 reports belonging to the signed-in user,
+newest first. A `user_id` query parameter is ignored. A user with no reports
+receives `200 OK` with an empty list:
+
+```json
+{"success":true,"data":{"items":[],"next_cursor":null}}
+```
+
+If `data.next_cursor` contains a string, pass it back URL-encoded as `cursor`
+on the next request: `GET /api/incidents?cursor=<encoded-cursor>`.
+Use the same signed-in user for each page. Stop when `next_cursor` is `null`.
+A malformed cursor or one belonging to another user returns `400 INVALID_CURSOR`.
+
 ## Retrieve an incident
 
 `GET /api/incidents/:id` returns `200 OK` with `success: true` and the stored
-report inside `data`. Older reports can omit fields added after their creation.
+report inside `data` when the signed-in user owns it.
 
-An unknown ID returns `404 Not Found`:
+An unknown ID, another user's report, or an older report without an owner
+returns the same `404 Not Found` response:
 
 ```json
-{
-  "success": false,
-  "error": {
-    "code": "INCIDENT_NOT_FOUND",
-    "message": "Incident report not found."
-  }
-}
+{"success":false,"error":{"code":"INCIDENT_NOT_FOUND","message":"Incident report not found."}}
 ```
 
 ## Verify a parking permit

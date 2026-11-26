@@ -579,3 +579,76 @@ test("admin search combines status and plate and rejects a cursor after the plat
   assert.equal((await second.json()).error.code, "INVALID_CURSOR");
   assert.equal(read.mock.callCount(), 1);
 });
+
+test("an admin can filter incident reports by exact parking spot", async (t) => {
+  const db = require("../src/config/dynamodb");
+  const reports = [
+    { incident_id: "inc-1", spot_id: "A1" },
+    { incident_id: "inc-2", spot_id: "A2" }
+  ];
+
+  const read = t.mock.method(db, "send", async (command) => {
+    const spot = command.input.ExpressionAttributeValues?.[":spot"];
+    return {
+      Items: spot === undefined ? reports : reports.filter(report => report.spot_id === spot)
+    };
+  });
+
+  const token = jwt.sign({ sub: "admin-1", role: "admin" }, process.env.JWT_SECRET, {
+    algorithm: "HS256",
+    issuer: process.env.JWT_ISSUER,
+    audience: process.env.JWT_AUDIENCE,
+    expiresIn: "5m"
+  });
+
+  const response = await fetch(`${url}/admin/reports?spot_id=A1`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.deepEqual(body.data.items, [reports[0]]);
+
+  const input = read.mock.calls[0].arguments[0].input;
+  assert.equal(input.ExpressionAttributeNames["#spot"], "spot_id");
+  assert.equal(input.FilterExpression, "#spot = :spot");
+});
+
+test("admin search combines status, plate and spot and rejects a cursor from another spot", async (t) => {
+  const db = require("../src/config/dynamodb");
+  const read = t.mock.method(db, "send", async (command) => {
+    const input = command.input;
+    assert.equal(input.FilterExpression, "#status = :status AND #plate = :plate AND #spot = :spot");
+    assert.deepEqual(input.ExpressionAttributeValues, {
+      ":status": "resolved",
+      ":plate": "TEST123",
+      ":spot": "A1"
+    });
+    return { Items: [], LastEvaluatedKey: { incident_id: "inc-25" } };
+  });
+
+  const token = jwt.sign({ sub: "admin-1", role: "admin" }, process.env.JWT_SECRET, {
+    algorithm: "HS256",
+    issuer: process.env.JWT_ISSUER,
+    audience: process.env.JWT_AUDIENCE,
+    expiresIn: "5m"
+  });
+  const headers = { Authorization: `Bearer ${token}` };
+  const endpoint = `${url}/admin/reports`;
+  const params = new URLSearchParams({
+    status: "resolved", vehicle_plate: "TEST123", spot_id: "A1"
+  });
+
+  const first = await fetch(`${endpoint}?${params}`, { headers });
+  assert.equal(first.status, 200);
+  const { data } = await first.json();
+  assert.ok(data.next_cursor);
+
+  params.set("cursor", data.next_cursor);
+  params.set("spot_id", "A2");
+  const second = await fetch(`${endpoint}?${params}`, { headers });
+
+  assert.equal(second.status, 400);
+  assert.equal((await second.json()).error.code, "INVALID_CURSOR");
+  assert.equal(read.mock.callCount(), 1);
+});

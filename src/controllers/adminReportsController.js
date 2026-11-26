@@ -2,32 +2,34 @@
 
 const allowedStatuses = new Set(["open", "under_review", "resolved"]);
 
-function readAdminCursor(cursor, status, vehiclePlate) {
+function readAdminCursor(cursor, filters) {
   if (typeof cursor !== "string" || !/^[A-Za-z0-9_-]+$/.test(cursor)) {
     return null;
   }
 
   try {
     const page = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
-
-    // Earlier status-only cursors omitted vehicle_plate.
     if (
-      page?.status !== (status ?? null) ||
-      (page.vehicle_plate ?? null) !== (vehiclePlate ?? null) ||
+      page?.status !== filters.status ||
+      (page.vehicle_plate ?? null) !== filters.vehicle_plate ||
+      (page.spot_id ?? null) !== filters.spot_id ||
       typeof page.incident_id !== "string" ||
       !page.incident_id.trim()
     ) {
       return null;
     }
-
     return { incident_id: page.incident_id };
   } catch {
     return null;
   }
 }
 
+function isInvalidTextFilter(value) {
+  return value !== undefined && (typeof value !== "string" || !value.trim());
+}
+
 async function getAdminReports(req, res) {
-  const { status, cursor, vehicle_plate } = req.query;
+  const { status, cursor, vehicle_plate, spot_id } = req.query;
 
   if (status !== undefined && !allowedStatuses.has(status)) {
     return res.status(400).json({
@@ -36,18 +38,31 @@ async function getAdminReports(req, res) {
     });
   }
 
-  if (vehicle_plate !== undefined &&
-      (typeof vehicle_plate !== "string" || !vehicle_plate.trim())) {
+  if (isInvalidTextFilter(vehicle_plate)) {
     return res.status(400).json({
       success: false,
       error: { code: "INVALID_VEHICLE_PLATE", message: "Supply a nonblank vehicle plate or omit it." }
     });
   }
 
+  if (isInvalidTextFilter(spot_id)) {
+    return res.status(400).json({
+      success: false,
+      error: { code: "INVALID_SPOT_ID", message: "Supply a nonblank spot ID or omit it." }
+    });
+  }
+
   const vehiclePlate = vehicle_plate?.trim();
+  const spotId = spot_id?.trim();
+  const filters = {
+    status: status ?? null,
+    vehicle_plate: vehiclePlate ?? null,
+    spot_id: spotId ?? null
+  };
+
   let startKey;
   if (cursor !== undefined) {
-    startKey = readAdminCursor(cursor, status, vehiclePlate);
+    startKey = readAdminCursor(cursor, filters);
     if (!startKey) {
       return res.status(400).json({
         success: false,
@@ -57,15 +72,10 @@ async function getAdminReports(req, res) {
   }
 
   try {
-    const { items, lastEvaluatedKey } = await listAdminReports(status, startKey, vehiclePlate);
+    const { items, lastEvaluatedKey } = await listAdminReports(status, startKey, vehiclePlate, spotId);
     let nextCursor = null;
-
     if (lastEvaluatedKey) {
-      const page = {
-        incident_id: lastEvaluatedKey.incident_id,
-        status: status ?? null,
-        vehicle_plate: vehiclePlate ?? null
-      };
+      const page = { incident_id: lastEvaluatedKey.incident_id, ...filters };
       nextCursor = Buffer.from(JSON.stringify(page)).toString("base64url");
     }
 

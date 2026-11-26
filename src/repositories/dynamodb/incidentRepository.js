@@ -79,7 +79,7 @@ async function resolveIncident(incidentId, adminId, resolutionNotes) {
   return result.Attributes;
 }
 
-async function listAdminReports(status, startKey, vehiclePlate) {
+async function listAdminReports(status, startKey, vehiclePlate, spotId) {
   const input = {
     TableName: tableName,
     Limit: 25,
@@ -100,6 +100,12 @@ async function listAdminReports(status, startKey, vehiclePlate) {
     filters.push("#plate = :plate");
     names["#plate"] = "vehicle_plate";
     values[":plate"] = vehiclePlate;
+  }
+
+  if (spotId !== undefined) {
+    filters.push("#spot = :spot");
+    names["#spot"] = "spot_id";
+    values[":spot"] = spotId;
   }
 
   if (filters.length > 0) {

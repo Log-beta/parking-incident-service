@@ -95,3 +95,49 @@ test("POST /api/incidents stores the signed-in user as owner when the body names
   assert.equal(body.data.user_id, "user-1");
   assert.equal(body.data.incident_id, writes[0].incident_id);
 });
+
+test("GET /api/incidents/:id requires authentication before reading DynamoDB", async (t) => {
+  const db = require("../src/config/dynamodb");
+  const read = t.mock.method(db, "send", async () => ({}));
+
+  const response = await fetch(`${url}/test-incident`);
+
+  assert.equal(response.status, 401);
+  assert.equal(read.mock.callCount(), 0);
+});
+
+const ownedReport = {
+  incident_id: "incident-ownership-test",
+  user_id: "user-1",
+  description: "Vehicle blocking bay A1"
+};
+
+for (const [userId, expectedStatus] of [["user-1", 200], ["user-2", 404]]) {
+  test(`GET incident owned by user-1 returns ${expectedStatus} for ${userId}`, async (t) => {
+    const db = require("../src/config/dynamodb");
+    t.mock.method(db, "send", async () => ({ Item: ownedReport }));
+
+    const token = jwt.sign({ sub: userId, role: "user" }, process.env.JWT_SECRET, {
+      algorithm: "HS256",
+      issuer: process.env.JWT_ISSUER,
+      audience: process.env.JWT_AUDIENCE,
+      expiresIn: "5m"
+    });
+
+    const response = await fetch(`${url}/${ownedReport.incident_id}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    assert.equal(response.status, expectedStatus);
+    const body = await response.json();
+
+    if (expectedStatus === 200) {
+      assert.deepEqual(body, { success: true, data: ownedReport });
+    } else {
+      assert.deepEqual(body, {
+        success: false,
+        error: { code: "INCIDENT_NOT_FOUND", message: "Incident report not found." }
+      });
+    }
+  });
+}

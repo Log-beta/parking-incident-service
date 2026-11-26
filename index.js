@@ -1,3 +1,4 @@
+const { isReportOwner } = require("./src/services/incidentOwnership");
 const { requireAuth } = require("./src/middleware/requireAuth");
 const { verifyIncidentPermit } = require("./src/controllers/permitController");
 const { validateIncident } = require("./src/validation/incidentValidation");
@@ -58,11 +59,11 @@ app.post("/api/incidents", requireAuth, async (req, res) => {
   }
 });
 
-app.get("/api/incidents/:id", async (req, res) => {
+app.get("/api/incidents/:id", requireAuth, async (req, res) => {
   try {
     const incident = await getIncidentById(req.params.id);
 
-    if (incident === null) {
+    if (!isReportOwner(incident, req.auth.userId)) {
       return res.status(404).json({ success: false, error: { code: "INCIDENT_NOT_FOUND", message: "Incident report not found." } });
     }
 

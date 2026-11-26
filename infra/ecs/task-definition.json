@@ -1,35 +1,82 @@
 {
-  "family": "parking-incidents",
-  "networkMode": "awsvpc",
-  "requiresCompatibilities": ["FARGATE"],
-  "cpu": "256",
-  "memory": "512",
-  "taskRoleArn": "arn:aws:iam::000000000000:role/parking-incidents-task-role",
-  "executionRoleArn": "arn:aws:iam::000000000000:role/parking-incidents-execution-role",
-  "containerDefinitions": [
-    {
-      "name": "parking-incidents",
-      "image": "parking-incidents:latest",
-      "essential": true,
-      "portMappings": [
-        {
-          "containerPort": 3003,
-          "protocol": "tcp"
-        }
-      ],
-      "environment": [
-        {"name": "PORT", "value": "3003"},
-        {"name": "AWS_REGION", "value": "us-east-1"},
-        {"name": "RUNTIME_SECRET_ID", "value": "parking/incidents/runtime"}
-      ],
-      "logConfiguration": {
-        "logDriver": "awslogs",
-        "options": {
-          "awslogs-group": "/ecs/parking-incidents",
-          "awslogs-region": "us-east-1",
-          "awslogs-stream-prefix": "incidents"
-        }
-      }
-    }
-  ]
+    "family":  "parking-incidents",
+    "networkMode":  "awsvpc",
+    "requiresCompatibilities":  [
+                                    "FARGATE"
+                                ],
+    "cpu":  "256",
+    "memory":  "512",
+    "taskRoleArn":  "arn:aws:iam::000000000000:role/parking-incidents-task-role",
+    "executionRoleArn":  "arn:aws:iam::000000000000:role/parking-incidents-execution-role",
+    "containerDefinitions":  [
+                                 {
+                                     "name":  "parking-incidents",
+                                     "image":  "parking-incidents:latest",
+                                     "essential":  true,
+                                     "portMappings":  [
+                                                          {
+                                                              "containerPort":  3003,
+                                                              "protocol":  "tcp"
+                                                          }
+                                                      ],
+                                     "environment":  [
+                                                         {
+                                                             "name":  "PORT",
+                                                             "value":  "3003"
+                                                         },
+                                                         {
+                                                             "name":  "AWS_REGION",
+                                                             "value":  "us-east-1"
+                                                         },
+                                                         {
+                                                             "name":  "RUNTIME_SECRET_ID",
+                                                             "value":  "parking/incidents/runtime"
+                                                         },
+                                                         {
+                                                             "value":  "cognito",
+                                                             "name":  "AUTH_MODE"
+                                                         },
+                                                         {
+                                                             "value":  "us-east-1",
+                                                             "name":  "COGNITO_REGION"
+                                                         },
+                                                         {
+                                                             "value":  "http://floci:4566",
+                                                             "name":  "COGNITO_ENDPOINT"
+                                                         },
+                                                         {
+                                                             "value":  "us-east-1_eeb9e71f0",
+                                                             "name":  "COGNITO_USER_POOL_ID"
+                                                         },
+                                                         {
+                                                             "value":  "5a15c7e27bfe4e9e90440266df",
+                                                             "name":  "COGNITO_CLIENT_ID"
+                                                         },
+                                                         {
+                                                             "value":  "http://floci:4566/us-east-1_eeb9e71f0",
+                                                             "name":  "COGNITO_ISSUER"
+                                                         },
+                                                         {
+                                                             "value":  "http://floci:4566/us-east-1_eeb9e71f0/.well-known/jwks.json",
+                                                             "name":  "COGNITO_JWKS_URL"
+                                                         },
+                                                         {
+                                                             "value":  "http://floci:4566",
+                                                             "name":  "SECRETS_MANAGER_ENDPOINT"
+                                                         },
+                                                         {
+                                                             "value":  "http://floci:4566",
+                                                             "name":  "DYNAMODB_ENDPOINT"
+                                                         }
+                                                     ],
+                                     "logConfiguration":  {
+                                                              "logDriver":  "awslogs",
+                                                              "options":  {
+                                                                              "awslogs-group":  "/ecs/parking-incidents",
+                                                                              "awslogs-region":  "us-east-1",
+                                                                              "awslogs-stream-prefix":  "incidents"
+                                                                          }
+                                                          }
+                                 }
+                             ]
 }

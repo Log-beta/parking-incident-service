@@ -641,3 +641,22 @@ Verification:
 Full container startup, ECS service execution and shared
 network integration remain pending.
 
+
+## ECS Service and Auto Scaling
+
+- Shared cluster: parking-cluster
+- Service: parking-incidents
+- Target group: parking-incidents-tg
+- Desired tasks: 1
+- Minimum tasks: 1
+- Maximum tasks: 4
+- CPU utilization target: 50%
+- Scale-out cooldown: 60 seconds
+- Scale-in cooldown: 120 seconds
+
+The ECS task definition uses container-network endpoints.
+The service provisioning script and CPU scaling policy
+are prepared for shared infrastructure integration.
+
+Provisioning and runtime scaling verification remain pending.
+

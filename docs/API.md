@@ -355,3 +355,29 @@ The frontend will require a separate policy.
 Evidence: incident-security-headers-live.png
 
 These controls follow the layered security approach introduced in Lab 8.
+
+## Incident input validation limits
+
+All four required incident fields must be nonblank strings.
+Maximum lengths are measured after trimming surrounding whitespace.
+
+| Field | Maximum length | Error code |
+| --- | --- | --- |
+| description | 500 | DESCRIPTION_TOO_LONG |
+| vehicle_plate | 20 | VEHICLE_PLATE_TOO_LONG |
+| spot_id | 50 | SPOT_ID_TOO_LONG |
+| incident_type | 50 | INCIDENT_TYPE_TOO_LONG |
+
+Oversized input returns HTTP 400 before any DynamoDB write.
+Values exactly at the maximum length are accepted.
+
+### Verification
+
+- Input length boundary tests: 8 passed.
+- API rejection before database access: Passed.
+- Full automated test suite: 77 passed, 0 failed.
+- Live oversized description rejection on worker 3013: HTTP 400.
+
+The limits are project-specific design decisions.
+Compatibility with Allocation and Inventory identifier lengths
+remains to be confirmed.

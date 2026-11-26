@@ -5,12 +5,28 @@
   ["incident_type", "INCIDENT_TYPE_REQUIRED", "An incident type is required."]
 ];
 
+const fieldLimits = [
+  ["description", 500, "DESCRIPTION_TOO_LONG", "Description"],
+  ["vehicle_plate", 20, "VEHICLE_PLATE_TOO_LONG", "Vehicle plate"],
+  ["spot_id", 50, "SPOT_ID_TOO_LONG", "Parking spot ID"],
+  ["incident_type", 50, "INCIDENT_TYPE_TOO_LONG", "Incident type"]
+];
+
 function validateIncident(body) {
   for (const [field, code, message] of requiredFields) {
     const value = body?.[field];
 
     if (typeof value !== "string" || value.trim() === "") {
       return { code, message };
+    }
+  }
+
+  for (const [field, max, code, label] of fieldLimits) {
+    if (body[field].trim().length > max) {
+      return {
+        code,
+        message: `${label} must not exceed ${max} characters.`
+      };
     }
   }
 

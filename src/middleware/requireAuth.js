@@ -1,4 +1,4 @@
-﻿const jwt = require("jsonwebtoken");
+const jwt = require("jsonwebtoken");
 
 function unauthorized(res) {
   return res.set("WWW-Authenticate", "Bearer").status(401).json({
@@ -35,8 +35,19 @@ function requireAuth(req, res, next) {
     return unauthorized(res);
   }
 
-  req.auth = { userId: claims.sub };
+  req.auth = { userId: claims.sub, role: claims.role };
   return next();
 }
 
-module.exports = { requireAuth };
+function requireAdmin(req, res, next) {
+  if (req.auth?.role !== "admin") {
+    return res.status(403).json({
+      success: false,
+      error: { code: "ADMIN_REQUIRED", message: "Administrator access is required." }
+    });
+  }
+
+  return next();
+}
+
+module.exports = { requireAuth, requireAdmin };

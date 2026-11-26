@@ -212,3 +212,120 @@ test("My Reports uses the returned cursor to fetch the next page", async (t) => 
   });
   assert.equal(query.mock.callCount(), 2);
 });
+
+test("a regular user cannot change an incident status", async (t) => {
+  const db = require("../src/config/dynamodb");
+  const databaseCall = t.mock.method(db, "send", async () => ({}));
+
+  const token = jwt.sign({ sub: "user-1", role: "user" }, process.env.JWT_SECRET, {
+    algorithm: "HS256",
+    issuer: process.env.JWT_ISSUER,
+    audience: process.env.JWT_AUDIENCE,
+    expiresIn: "5m"
+  });
+
+  const response = await fetch(`${url}/inc-1/status`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ status: "under_review" })
+  });
+
+  assert.equal(response.status, 403);
+  assert.equal(databaseCall.mock.callCount(), 0);
+});
+
+test("an admin can move an open incident under review", async (t) => {
+  const db = require("../src/config/dynamodb");
+  const { UpdateCommand } = require("@aws-sdk/lib-dynamodb");
+
+  const write = t.mock.method(db, "send", async (command) => {
+    assert.ok(command instanceof UpdateCommand);
+    assert.deepEqual(command.input.Key, { incident_id: "inc-1" });
+
+    const values = command.input.ExpressionAttributeValues;
+    assert.equal(values[":from"], "open");
+    assert.equal(values[":to"], "under_review");
+    assert.equal(values[":actor"], "admin-1");
+    assert.match(command.input.ConditionExpression, /#status\s*=\s*:from/);
+
+    return {
+      Attributes: {
+        incident_id: "inc-1",
+        status: values[":to"],
+        updated_by: values[":actor"]
+      }
+    };
+  });
+
+  const token = jwt.sign({ sub: "admin-1", role: "admin" }, process.env.JWT_SECRET, {
+    algorithm: "HS256",
+    issuer: process.env.JWT_ISSUER,
+    audience: process.env.JWT_AUDIENCE,
+    expiresIn: "5m"
+  });
+
+  const response = await fetch(`${url}/inc-1/status`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ status: "under_review" })
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(write.mock.callCount(), 1);
+  const body = await response.json();
+  assert.equal(body.success, true);
+  assert.equal(body.data.status, "under_review");
+  assert.equal(body.data.updated_by, "admin-1");
+});
+
+const reviewConflicts = [
+  ["missing incident", null, 404, "INCIDENT_NOT_FOUND"],
+  ["incident already under review", { incident_id: "inc-1", status: "under_review" }, 409, "STATUS_CONFLICT"]
+];
+
+for (const [scenario, existing, expectedStatus, expectedCode] of reviewConflicts) {
+  test(`starting a review returns ${expectedStatus} for ${scenario}`, async (t) => {
+    const db = require("../src/config/dynamodb");
+    const { UpdateCommand, GetCommand } = require("@aws-sdk/lib-dynamodb");
+
+    const calls = t.mock.method(db, "send", async (command) => {
+      assert.deepEqual(command.input.Key, { incident_id: "inc-1" });
+      if (command instanceof UpdateCommand) {
+        const error = new Error("The incident was not open");
+        error.name = "ConditionalCheckFailedException";
+        throw error;
+      }
+
+      assert.ok(command instanceof GetCommand);
+      return existing ? { Item: existing } : {};
+    });
+
+    const token = jwt.sign({ sub: "admin-2", role: "admin" }, process.env.JWT_SECRET, {
+      algorithm: "HS256",
+      issuer: process.env.JWT_ISSUER,
+      audience: process.env.JWT_AUDIENCE,
+      expiresIn: "5m"
+    });
+
+    const response = await fetch(`${url}/inc-1/status`, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ status: "under_review" })
+    });
+
+    assert.equal(response.status, expectedStatus);
+    const body = await response.json();
+    assert.equal(body.success, false);
+    assert.equal(body.error.code, expectedCode);
+    assert.equal(calls.mock.callCount(), 2);
+  });
+}

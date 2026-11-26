@@ -1,6 +1,7 @@
+const { updateIncidentStatus } = require("./src/controllers/incidentStatusController");
 const { listMyReports } = require("./src/controllers/myReportsController");
 const { isReportOwner } = require("./src/services/incidentOwnership");
-const { requireAuth } = require("./src/middleware/requireAuth");
+const { requireAuth, requireAdmin } = require("./src/middleware/requireAuth");
 const { verifyIncidentPermit } = require("./src/controllers/permitController");
 const { validateIncident } = require("./src/validation/incidentValidation");
 const express = require("express");
@@ -61,6 +62,8 @@ app.post("/api/incidents", requireAuth, async (req, res) => {
 });
 
 app.get("/api/incidents", requireAuth, listMyReports);
+
+app.patch("/api/incidents/:id/status", requireAuth, requireAdmin, updateIncidentStatus);
 
 app.get("/api/incidents/:id", requireAuth, async (req, res) => {
   try {

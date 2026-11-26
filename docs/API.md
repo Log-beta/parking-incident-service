@@ -30,6 +30,92 @@ Invalid input returns `400 Bad Request` with the first applicable error code:
 `DESCRIPTION_REQUIRED`, `VEHICLE_PLATE_REQUIRED`, `SPOT_ID_REQUIRED`, or
 `INCIDENT_TYPE_REQUIRED`.
 
+### Duplicate incident protection
+
+An identical incident submitted by the same authenticated user within
+10 minutes returns `409 Conflict`.
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "DUPLICATE_INCIDENT",
+    "message": "An identical incident was submitted within the last 10 minutes."
+  }
+}
+```
+
+Duplicate detection uses a SHA-256 hash of the following fields:
+
+- Authenticated user ID.
+- Vehicle plate.
+- Parking spot ID.
+- Incident type.
+- Description.
+
+Surrounding whitespace is removed from report fields. Vehicle plate
+and parking spot comparisons remain case-sensitive.
+
+Different users can independently report the same incident.
+Generated incident IDs and timestamps are excluded from the hash.
+
+### Duplicate protection storage
+
+The service uses a DynamoDB transaction to atomically claim the
+duplicate key and store the incident report. Either both writes
+succeed or neither succeeds.
+
+| Setting | Value |
+| --- | --- |
+| Main table | `IncidentDuplicateKeys` |
+| Test table | `IncidentDuplicateKeysTest` |
+| Partition key | `duplicate_key` (String) |
+| Expiration attribute | `expires_at` (Number, epoch seconds) |
+| Billing mode | `PAY_PER_REQUEST` |
+| Protection window | 600 seconds |
+
+A duplicate key can be reclaimed when its expiration timestamp is
+less than or equal to the current timestamp. The condition does not
+depend on automatic DynamoDB TTL deletion.
+
+The table can be configured through `INCIDENT_DUPLICATE_KEYS_TABLE`.
+The default is `IncidentDuplicateKeys`, or `IncidentDuplicateKeysTest`
+when using `IncidentReportsTest`.
+
+Provision either table using Git Bash:
+
+```bash
+bash infra/dynamodb/ensure-incident-duplicate-table.sh IncidentDuplicateKeys
+bash infra/dynamodb/ensure-incident-duplicate-table.sh IncidentDuplicateKeysTest
+```
+
+Only a recognized duplicate-key condition failure returns HTTP 409.
+Unrelated transaction failures and database outages return
+`500 INCIDENT_SAVE_FAILED`.
+
+### Duplicate protection verification
+
+| Verification | Result |
+| --- | --- |
+| Duplicate-key generation tests | Passed |
+| Atomic transaction construction | Passed |
+| Duplicate conflict classification | Passed |
+| Unrelated database failure handling (mocked) | Passed |
+| Authenticated report ownership | Passed |
+| Expiry condition and calculation (mocked) | Passed |
+| First submission on test worker (3013) | HTTP 201 |
+| Identical retry on test worker (3013) | HTTP 409 |
+| Matching reports in returned test page | 1 |
+| First submission on main worker (3003) | HTTP 201 |
+| Identical retry on main worker (3003) | HTTP 409 |
+| Full automated test suite | 66 passed, 0 failed |
+
+Live tests were performed against DynamoDB on Floci using local
+JWT authentication. Live expiry-boundary enforcement, concurrent
+submission testing and final team authentication integration
+remain to be verified.
+
+
 ## List my reports
 
 `GET /api/incidents` returns up to 25 reports belonging to the signed-in user,

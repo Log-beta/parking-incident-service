@@ -1,17 +1,59 @@
-const { PutCommand, GetCommand, QueryCommand, UpdateCommand, ScanCommand } = require("@aws-sdk/lib-dynamodb");
+const { TransactWriteCommand, GetCommand, QueryCommand, UpdateCommand, ScanCommand } = require("@aws-sdk/lib-dynamodb");
+const { getIncidentDuplicateKey } = require("../../services/incidentDuplicate");
 const db = require("../../config/dynamodb");
 
 const tableName = process.env.INCIDENT_REPORTS_TABLE || "IncidentReports";
 
+const duplicateKeysTable = process.env.INCIDENT_DUPLICATE_KEYS_TABLE ||
+  (tableName === "IncidentReportsTest" ? "IncidentDuplicateKeysTest" : "IncidentDuplicateKeys");
+
 async function saveIncident(incident) {
-  await db.send(new PutCommand({
-    TableName: tableName,
-    Item: incident,
-    ConditionExpression: "attribute_not_exists(incident_id)"
-  }));
+  const now = Math.floor(Date.now() / 1000);
+
+  try {
+    await db.send(new TransactWriteCommand({
+      TransactItems: [
+        {
+          Put: {
+            TableName: duplicateKeysTable,
+            Item: {
+              duplicate_key: getIncidentDuplicateKey(incident),
+              expires_at: now + 600
+            },
+            ConditionExpression: "attribute_not_exists(duplicate_key) OR expires_at <= :now",
+            ExpressionAttributeValues: { ":now": now }
+          }
+        },
+        {
+          Put: {
+            TableName: tableName,
+            Item: incident,
+            ConditionExpression: "attribute_not_exists(incident_id)"
+          }
+        }
+      ]
+    }));
+  } catch (error) {
+    if (
+      error.name === "TransactionCanceledException" &&
+      error.CancellationReasons?.[0]?.Code === "ConditionalCheckFailed" &&
+      error.CancellationReasons?.[1]?.Code === "None"
+    ) {
+      const duplicateError = new Error(
+        "An identical incident was submitted within the last 10 minutes.",
+        { cause: error }
+      );
+
+      duplicateError.code = "DUPLICATE_INCIDENT";
+      throw duplicateError;
+    }
+
+    throw error;
+  }
 
   return incident;
 }
+
 async function getIncidentById(incidentId) {
   const result = await db.send(new GetCommand({
     TableName: tableName,

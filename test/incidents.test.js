@@ -1,4 +1,4 @@
-﻿const { test, before, after } = require("node:test");
+const { test, before, after } = require("node:test");
 const assert = require("node:assert/strict");
 const { randomBytes } = require("node:crypto");
 const { once } = require("node:events");
@@ -57,12 +57,16 @@ test("POST /api/incidents rejects a missing description for a signed-in user", a
 
 test("POST /api/incidents stores the signed-in user as owner when the body names another user", async (t) => {
   const db = require("../src/config/dynamodb");
-  const { PutCommand } = require("@aws-sdk/lib-dynamodb");
+  const { TransactWriteCommand } = require("@aws-sdk/lib-dynamodb");
   const writes = [];
 
   t.mock.method(db, "send", async (command) => {
-    assert.ok(command instanceof PutCommand);
-    writes.push(command.input.Item);
+    assert.ok(command instanceof TransactWriteCommand);
+    const items = command.input.TransactItems;
+    assert.equal(items.length, 2);
+    assert.ok(items[0].Put.Item.duplicate_key);
+    assert.ok(items[1].Put.Item.incident_id);
+    writes.push(items[1].Put.Item);
     return {};
   });
 
@@ -651,4 +655,56 @@ test("admin search combines status, plate and spot and rejects a cursor from ano
   assert.equal(second.status, 400);
   assert.equal((await second.json()).error.code, "INVALID_CURSOR");
   assert.equal(read.mock.callCount(), 1);
+});
+test("POST /api/incidents returns 409 for a duplicate incident", async (t) => {
+  const db = require("../src/config/dynamodb");
+  const { TransactWriteCommand } = require("@aws-sdk/lib-dynamodb");
+
+  const write = t.mock.method(db, "send", async (command) => {
+    assert.ok(command instanceof TransactWriteCommand);
+
+    throw Object.assign(new Error("Transaction cancelled"), {
+      name: "TransactionCanceledException",
+      CancellationReasons: [
+        { Code: "ConditionalCheckFailed" },
+        { Code: "None" }
+      ]
+    });
+  });
+
+  const token = jwt.sign(
+    { sub: "user-1", role: "user" },
+    process.env.JWT_SECRET,
+    {
+      algorithm: "HS256",
+      issuer: process.env.JWT_ISSUER,
+      audience: process.env.JWT_AUDIENCE,
+      expiresIn: "5m"
+    }
+  );
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify({
+      description: "Vehicle blocking bay A1",
+      vehicle_plate: "ABC123",
+      spot_id: "A1",
+      incident_type: "unauthorized_parking"
+    })
+  });
+
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), {
+    success: false,
+    error: {
+      code: "DUPLICATE_INCIDENT",
+      message: "An identical incident was submitted within the last 10 minutes."
+    }
+  });
+
+  assert.equal(write.mock.callCount(), 1);
 });

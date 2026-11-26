@@ -56,10 +56,26 @@ app.post("/api/incidents", requireAuth, async (req, res) => {
     });
 
     return res.status(201).json({ success: true, data: incident });
-  } catch (error) {
+ } catch (error) {
+    if (error.code === "DUPLICATE_INCIDENT") {
+      return res.status(409).json({
+        success: false,
+        error: {
+          code: "DUPLICATE_INCIDENT",
+          message: "An identical incident was submitted within the last 10 minutes."
+        }
+      });
+    }
+
     console.error("Failed to save incident report:", error);
-    return res.status(500).json({ success: false, error: { code: "INCIDENT_SAVE_FAILED", message: "Failed to save incident report." } });
-  }
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: "INCIDENT_SAVE_FAILED",
+        message: "Failed to save incident report."
+      }
+    });
+}
 });
 
 app.get("/api/incidents", requireAuth, listMyReports);

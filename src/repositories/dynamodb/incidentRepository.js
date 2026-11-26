@@ -1,4 +1,4 @@
-const { PutCommand, GetCommand } = require("@aws-sdk/lib-dynamodb");
+const { PutCommand, GetCommand, QueryCommand } = require("@aws-sdk/lib-dynamodb");
 const db = require("../../config/dynamodb");
 
 const tableName = process.env.INCIDENT_REPORTS_TABLE || "IncidentReports";
@@ -21,4 +21,21 @@ async function getIncidentById(incidentId) {
 
   return result.Item ?? null;
 }
-module.exports = { saveIncident, getIncidentById };
+async function listIncidentsByOwner(userId, startKey) {
+  const result = await db.send(new QueryCommand({
+    TableName: tableName,
+    IndexName: "user_id-created_at-index",
+    KeyConditionExpression: "user_id = :owner",
+    ExpressionAttributeValues: { ":owner": userId },
+    ScanIndexForward: false,
+    Limit: 25,
+    ExclusiveStartKey: startKey
+  }));
+
+  return {
+    items: result.Items ?? [],
+    lastEvaluatedKey: result.LastEvaluatedKey ?? null
+  };
+}
+
+module.exports = { saveIncident, getIncidentById, listIncidentsByOwner };

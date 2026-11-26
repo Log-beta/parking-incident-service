@@ -1,3 +1,4 @@
+const { listMyReports } = require("./src/controllers/myReportsController");
 const { isReportOwner } = require("./src/services/incidentOwnership");
 const { requireAuth } = require("./src/middleware/requireAuth");
 const { verifyIncidentPermit } = require("./src/controllers/permitController");
@@ -58,6 +59,8 @@ app.post("/api/incidents", requireAuth, async (req, res) => {
     return res.status(500).json({ success: false, error: { code: "INCIDENT_SAVE_FAILED", message: "Failed to save incident report." } });
   }
 });
+
+app.get("/api/incidents", requireAuth, listMyReports);
 
 app.get("/api/incidents/:id", requireAuth, async (req, res) => {
   try {

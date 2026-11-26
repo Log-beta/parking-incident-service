@@ -417,3 +417,96 @@ test("an admin resolves an incident under review with trimmed notes and an audit
   assert.equal(body.data.resolved_by, "admin-1");
   assert.equal(write.mock.callCount(), 1);
 });
+
+test("a regular user cannot list reports through the admin dashboard", async (t) => {
+  const db = require("../src/config/dynamodb");
+  const databaseCall = t.mock.method(db, "send", async () => ({}));
+
+  const token = jwt.sign({ sub: "user-1", role: "user" }, process.env.JWT_SECRET, {
+    algorithm: "HS256",
+    issuer: process.env.JWT_ISSUER,
+    audience: process.env.JWT_AUDIENCE,
+    expiresIn: "5m"
+  });
+
+  const response = await fetch(`${url}/admin/reports?status=open`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+
+  assert.equal(response.status, 403);
+  const body = await response.json();
+  assert.equal(body.error.code, "ADMIN_REQUIRED");
+  assert.equal(databaseCall.mock.callCount(), 0);
+});
+
+test("an admin can list open incidents across owners", async (t) => {
+  const db = require("../src/config/dynamodb");
+  const reports = [
+    { incident_id: "inc-1", user_id: "user-1", status: "open" },
+    { incident_id: "inc-2", user_id: "user-2", status: "open" },
+    { incident_id: "inc-3", user_id: "user-2", status: "resolved" }
+  ];
+
+  const read = t.mock.method(db, "send", async (command) => {
+    const input = command.input;
+    assert.equal(input.FilterExpression, "#status = :status");
+    assert.equal(input.ExpressionAttributeNames["#status"], "status");
+    assert.equal(input.ExpressionAttributeValues[":status"], "open");
+    return { Items: reports.filter(report => report.status === "open") };
+  });
+
+  const token = jwt.sign({ sub: "admin-1", role: "admin" }, process.env.JWT_SECRET, {
+    algorithm: "HS256",
+    issuer: process.env.JWT_ISSUER,
+    audience: process.env.JWT_AUDIENCE,
+    expiresIn: "5m"
+  });
+
+  const response = await fetch(`${url}/admin/reports?status=open`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(read.mock.callCount(), 1);
+  const body = await response.json();
+  assert.equal(body.success, true);
+  assert.deepEqual(body.data.items, [reports[0], reports[1]]);
+  assert.equal(body.data.next_cursor, null);
+});
+
+test("an admin can continue past an empty filtered page to find an open report", async (t) => {
+  const db = require("../src/config/dynamodb");
+  const lastKey = { incident_id: "inc-last-evaluated" };
+  const openReport = { incident_id: "inc-open", user_id: "user-2", status: "open" };
+
+  const read = t.mock.method(db, "send", async (command) => {
+    assert.equal(command.input.ExpressionAttributeValues[":status"], "open");
+
+    if (command.input.ExclusiveStartKey === undefined) {
+      return { Items: [], LastEvaluatedKey: lastKey };
+    }
+
+    assert.deepEqual(command.input.ExclusiveStartKey, lastKey);
+    return { Items: [openReport] };
+  });
+
+  const token = jwt.sign({ sub: "admin-1", role: "admin" }, process.env.JWT_SECRET, {
+    algorithm: "HS256",
+    issuer: process.env.JWT_ISSUER,
+    audience: process.env.JWT_AUDIENCE,
+    expiresIn: "5m"
+  });
+  const headers = { Authorization: `Bearer ${token}` };
+  const endpoint = `${url}/admin/reports?status=open`;
+
+  const first = await fetch(endpoint, { headers });
+  assert.equal(first.status, 200);
+  const firstPage = (await first.json()).data;
+  assert.deepEqual(firstPage.items, []);
+  assert.ok(typeof firstPage.next_cursor === "string" && firstPage.next_cursor.length > 0);
+
+  const second = await fetch(`${endpoint}&cursor=${encodeURIComponent(firstPage.next_cursor)}`, { headers });
+  assert.equal(second.status, 200);
+  assert.deepEqual((await second.json()).data, { items: [openReport], next_cursor: null });
+  assert.equal(read.mock.callCount(), 2);
+});

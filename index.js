@@ -1,3 +1,4 @@
+const { getAdminReports } = require("./src/controllers/adminReportsController");
 const { updateIncidentStatus } = require("./src/controllers/incidentStatusController");
 const { listMyReports } = require("./src/controllers/myReportsController");
 const { isReportOwner } = require("./src/services/incidentOwnership");
@@ -62,6 +63,8 @@ app.post("/api/incidents", requireAuth, async (req, res) => {
 });
 
 app.get("/api/incidents", requireAuth, listMyReports);
+
+app.get("/api/incidents/admin/reports", requireAuth, requireAdmin, getAdminReports);
 
 app.patch("/api/incidents/:id/status", requireAuth, requireAdmin, updateIncidentStatus);
 

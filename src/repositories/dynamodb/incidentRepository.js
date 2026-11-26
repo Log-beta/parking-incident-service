@@ -1,4 +1,4 @@
-const { PutCommand, GetCommand, QueryCommand, UpdateCommand } = require("@aws-sdk/lib-dynamodb");
+const { PutCommand, GetCommand, QueryCommand, UpdateCommand, ScanCommand } = require("@aws-sdk/lib-dynamodb");
 const db = require("../../config/dynamodb");
 
 const tableName = process.env.INCIDENT_REPORTS_TABLE || "IncidentReports";
@@ -79,4 +79,24 @@ async function resolveIncident(incidentId, adminId, resolutionNotes) {
   return result.Attributes;
 }
 
-module.exports = { saveIncident, getIncidentById, listIncidentsByOwner, startIncidentReview, resolveIncident };
+async function listAdminReports(status, startKey) {
+  const input = {
+    TableName: tableName,
+    Limit: 25,
+    ExclusiveStartKey: startKey
+  };
+
+  if (status !== undefined) {
+    input.FilterExpression = "#status = :status";
+    input.ExpressionAttributeNames = { "#status": "status" };
+    input.ExpressionAttributeValues = { ":status": status };
+  }
+
+  const result = await db.send(new ScanCommand(input));
+  return {
+    items: result.Items ?? [],
+    lastEvaluatedKey: result.LastEvaluatedKey ?? null
+  };
+}
+
+module.exports = { saveIncident, getIncidentById, listIncidentsByOwner, startIncidentReview, resolveIncident, listAdminReports };

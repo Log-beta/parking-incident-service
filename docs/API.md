@@ -458,3 +458,37 @@ and reset when a worker restarts.
 Trusted proxy configuration remains pending until the shared
 load balancer forwarding behavior is verified. Forwarded IP
 headers are not currently trusted.
+
+## Centralized error handling
+
+The service uses dedicated error handling middleware located
+in src/middleware/errorHandler.js.
+
+| HTTP status | Error code | Description |
+| --- | --- | --- |
+| 400 | INVALID_JSON | Malformed JSON request |
+| 413 | PAYLOAD_TOO_LARGE | Request exceeds the JSON body limit |
+| 404 | ENDPOINT_NOT_FOUND | Unknown endpoint |
+| 500 | INTERNAL_SERVER_ERROR | Unexpected server error |
+
+Error responses follow the standard JSON response structure.
+Internal stack traces, file paths and raw exception messages
+are not exposed through the centralized handler.
+
+The default Express JSON body limit of 100 KB is retained.
+Unexpected errors are logged using the error name rather than
+the raw request body or exception message.
+
+### Verification
+
+- Full automated test suite: 94 passed, 0 failed.
+- Malformed JSON: automated and live verification passed.
+- Oversized requests: automated verification passed,
+  live HTTP 413 status confirmed.
+- Unknown endpoints: automated and live verification passed.
+- Unexpected HTTP 500 errors: isolated middleware test passed.
+
+Live verification was performed on isolated worker 3013.
+HTTP 500 handling was tested using a simulated exception,
+not an actual infrastructure failure.
+

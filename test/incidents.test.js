@@ -812,3 +812,62 @@ test("POST /api/incidents rejects unsafe input before accessing DynamoDB", async
 
   assert.equal(databaseCall.mock.callCount(), 0);
 });
+
+test("malformed JSON returns a safe JSON error without exposing stack traces", async () => {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: '{"description":'
+  });
+
+  assert.equal(response.status, 400);
+  assert.match(response.headers.get("content-type"), /application\/json/);
+
+  assert.deepEqual(await response.json(), {
+    success: false,
+    error: {
+      code: "INVALID_JSON",
+      message: "Request body contains invalid JSON."
+    }
+  });
+});
+
+test("oversized request body returns a safe JSON error", async () => {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      description: "a".repeat(200000)
+    })
+  });
+
+  assert.equal(response.status, 413);
+  assert.match(response.headers.get("content-type"), /application\/json/);
+
+  assert.deepEqual(await response.json(), {
+    success: false,
+    error: {
+      code: "PAYLOAD_TOO_LARGE",
+      message: "Request body exceeds the allowed size."
+    }
+  });
+});
+
+test("unknown endpoint returns a safe JSON error", async () => {
+  const response = await fetch(`${url}/nonexistent/endpoint`);
+
+  assert.equal(response.status, 404);
+  assert.match(response.headers.get("content-type"), /application\/json/);
+
+  assert.deepEqual(await response.json(), {
+    success: false,
+    error: {
+      code: "ENDPOINT_NOT_FOUND",
+      message: "The requested endpoint does not exist."
+    }
+  });
+});

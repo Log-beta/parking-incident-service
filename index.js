@@ -1,3 +1,4 @@
+const { errorHandler } = require("./src/middleware/errorHandler");
 const { getAdminReports } = require("./src/controllers/adminReportsController");
 const { updateIncidentStatus } = require("./src/controllers/incidentStatusController");
 const { listMyReports } = require("./src/controllers/myReportsController");
@@ -121,6 +122,18 @@ app.get("/api/incidents/:id", requireAuth, async (req, res) => {
     return res.status(500).json({ success: false, error: { code: "INCIDENT_LOOKUP_FAILED", message: "Failed to retrieve incident report." } });
   }
 });
+
+app.use((req, res) => {
+  return res.status(404).json({
+    success: false,
+    error: {
+      code: "ENDPOINT_NOT_FOUND",
+      message: "The requested endpoint does not exist."
+    }
+  });
+});
+
+app.use(errorHandler);
 
 if (require.main === module) {
   app.listen(port, () => {

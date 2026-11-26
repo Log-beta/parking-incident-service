@@ -406,3 +406,55 @@ All angle brackets are rejected, including legitimate comparisons.
 
 This is an additional security layer, not complete XSS protection.
 Safe frontend rendering remains required.
+
+## API rate limiting
+
+The service implements an IP-based sliding-window rate limiter
+following the approach introduced in Lab 8.
+
+### Configuration
+
+| Environment variable | Default |
+| --- | --- |
+| RATE_LIMIT_MAX | 60 |
+| RATE_LIMIT_WINDOW_MS | 60000 |
+
+The limiter applies to all /api endpoints before authentication
+and JSON parsing. The /health endpoint is exempt to preserve
+load balancer health checks.
+
+Exceeding the limit returns HTTP 429:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "RATE_LIMIT_EXCEEDED",
+    "message": "Too many requests. Please try again later."
+  }
+}
+```
+
+The Retry-After header indicates the full window duration in seconds.
+Expired client records are periodically removed from memory.
+
+### Verification
+
+- Sliding-window rate limiter tests: 6 passed.
+- Full automated test suite: 90 passed, 0 failed.
+- Live testing on worker 3013 with a temporary limit of 3:
+  - First three unauthenticated requests: HTTP 401.
+  - Fourth request: HTTP 429.
+  - Retry-After: 60 seconds.
+- Five consecutive health requests: HTTP 200.
+- Default rate limit restored after testing.
+
+### Limitations
+
+Rate limiting is maintained independently by each worker.
+Counters are not shared across horizontally scaled instances
+and reset when a worker restarts.
+
+Trusted proxy configuration remains pending until the shared
+load balancer forwarding behavior is verified. Forwarded IP
+headers are not currently trusted.

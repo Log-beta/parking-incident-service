@@ -36,6 +36,16 @@ app.use((req, res, next) => {
   next();
 });
 
+const { createRateLimitMiddleware } = require("./src/middleware/rateLimiter");
+
+const rateLimitMax = Number(process.env.RATE_LIMIT_MAX ?? 60);
+const rateLimitWindowMs = Number(process.env.RATE_LIMIT_WINDOW_MS ?? 60000);
+
+app.use("/api", createRateLimitMiddleware({
+  maxRequests: rateLimitMax,
+  windowMs: rateLimitWindowMs
+}));
+
 app.use(express.json());
 
 app.get("/", (req, res) => {

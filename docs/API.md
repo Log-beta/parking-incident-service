@@ -201,3 +201,24 @@ using Floci and DynamoDB.
 Automated controller and repository tests use mocked external dependencies.
 
 Live integration with the actual Allocation microservice remains pending.
+
+## Investigate and resolve an incident
+
+`PATCH /api/incidents/:id/status` requires a Bearer token with the `admin` role.
+Send a JSON body with `Content-Type: application/json`.
+
+| Current status | Request body | Result |
+| --- | --- | --- |
+| `open` | `{"status":"under_review"}` | Starts the investigation and records `updated_by` and `updated_at`. |
+| `under_review` | `{"status":"resolved","resolution_notes":"Vehicle moved and bay A1 is clear."}` | Saves the trimmed note, `resolved_by` and `resolved_at`, and updates `updated_by` and `updated_at`. |
+
+Both transitions return `200 OK` with the updated incident in `data`.
+The backend takes the admin ID from the verified token and generates the UTC timestamps.
+
+| HTTP status | When it occurs |
+| --- | --- |
+| `400` | Unsupported status, or a resolution note is missing, blank, or not a string. |
+| `401` | The token is missing or invalid. |
+| `403` | The signed-in user lacks the admin role. |
+| `404` | The incident ID does not exist. |
+| `409` | The current status prevents the transition. Retrying a completed resolution returns `STATUS_CONFLICT` and preserves the original note. |

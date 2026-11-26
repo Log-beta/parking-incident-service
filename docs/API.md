@@ -222,3 +222,19 @@ The backend takes the admin ID from the verified token and generates the UTC tim
 | `403` | The signed-in user lacks the admin role. |
 | `404` | The incident ID does not exist. |
 | `409` | The current status prevents the transition. Retrying a completed resolution returns `STATUS_CONFLICT` and preserves the original note. |
+
+## List reports for the admin dashboard
+
+`GET /api/incidents/admin/reports` requires a Bearer token with the `admin` role.
+It lists reports across owners. To filter by status, use `open`, `under_review`,
+or `resolved`. For example: `GET /api/incidents/admin/reports?status=open`.
+
+A successful request returns `200 OK` with `data.items` and `data.next_cursor`.
+A filtered page can have zero items and still have a cursor. Continue with the
+same status filter and URL-encode the cursor. Stop when `next_cursor` is `null`.
+
+| HTTP status | Meaning |
+| --- | --- |
+| `400` | `INVALID_STATUS` for an unsupported status, or `INVALID_CURSOR` for a malformed cursor or one used with a different filter. |
+| `401` | A valid access token is required. |
+| `403` | The signed-in user lacks the admin role. |

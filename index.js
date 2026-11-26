@@ -136,6 +136,8 @@ app.use((req, res) => {
 app.use(errorHandler);
 
 if (require.main === module) {
+  const { validateAuthConfig } = require("./src/middleware/authConfig");
+  validateAuthConfig();
   app.listen(port, () => {
     console.log(`${instanceId} listening on http://localhost:${port}`);
   });

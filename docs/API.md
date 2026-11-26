@@ -492,3 +492,58 @@ Live verification was performed on isolated worker 3013.
 HTTP 500 handling was tested using a simulated exception,
 not an actual infrastructure failure.
 
+
+## Cognito authentication
+
+The Incident Service uses the shared Cognito user pool
+provided by the Allocation Service team.
+
+### Authentication
+
+- Only RS256 Cognito access tokens are accepted.
+- Token signatures are verified using Cognito public signing keys.
+- Issuer, client ID, expiration and token type are validated.
+- Legacy HS256 tokens and Cognito ID tokens are rejected.
+- Signing keys are cached for five minutes.
+- Unknown signing keys trigger a refresh with a 30-second cooldown.
+- Concurrent signing key refreshes share a single request per worker.
+
+### Identity and authorization
+
+Cognito subjects are mapped to shared application user IDs
+using COGNITO_USERS_JSON or COGNITO_USERS_FILE.
+
+Administrator permissions are derived exclusively from
+verified Cognito groups.
+
+Unknown users, invalid mappings and conflicting roles are rejected.
+Existing incident ownership and administrator interfaces are preserved.
+
+### Configuration
+
+See .env.example for the required environment variables.
+
+The application validates required configuration at startup.
+Private identity mappings must be stored under .local/ or
+injected through environment configuration.
+
+Private environment files and local identity mappings
+are excluded from Git.
+
+### Verification
+
+- Cognito verifier tests: 13 passed.
+- Identity mapping tests: 13 passed.
+- Startup configuration tests: 4 passed.
+- Full automated regression suite: 129 passed, 0 failed.
+- Startup rejection without AUTH_MODE verified.
+
+### Limitations
+
+Automated tests use simulated Cognito tokens and mocked JWKS
+responses. Live authentication against the shared Cognito
+environment remains pending.
+
+Actual shared identity mappings and Allocation credentials
+must be obtained securely before live integration.
+

@@ -4,9 +4,62 @@ const { randomBytes } = require("node:crypto");
 const { once } = require("node:events");
 const jwt = require("jsonwebtoken");
 
-process.env.JWT_SECRET = randomBytes(32).toString("hex");
-process.env.JWT_ISSUER = "test-allocation";
-process.env.JWT_AUDIENCE = "test-parking";
+const { generateKeyPairSync } = require("node:crypto");
+
+const { publicKey, privateKey } = generateKeyPairSync("rsa", {
+  modulusLength: 2048
+});
+
+process.env.COGNITO_ISSUER = "https://example.test/cognito";
+process.env.COGNITO_CLIENT_ID = "test-parking";
+process.env.COGNITO_JWKS_URL = "https://example.test/jwks";
+
+const kid = "incidents-integration-test-key";
+
+const jwk = {
+  ...publicKey.export({ format: "jwk" }),
+  kid,
+  alg: "RS256",
+  use: "sig"
+};
+
+process.env.COGNITO_USERS_JSON = JSON.stringify({
+  "user-1": { user_id: "user-1", priority: 1 },
+  "user-2": { user_id: "user-2", priority: 1 },
+  "admin-1": { user_id: "admin-1", priority: 1 },
+  "admin-2": { user_id: "admin-2", priority: 1 }
+});
+
+const originalFetch = globalThis.fetch;
+
+globalThis.fetch = async (input, options) => {
+  if (input === process.env.COGNITO_JWKS_URL) {
+    return new Response(JSON.stringify({ keys: [jwk] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+
+  return originalFetch(input, options);
+};
+
+after(() => {
+  globalThis.fetch = originalFetch;
+});
+
+function createCognitoToken({ sub, role }) {
+  return jwt.sign({
+    sub,
+    iss: process.env.COGNITO_ISSUER,
+    client_id: process.env.COGNITO_CLIENT_ID,
+    token_use: "access",
+    "cognito:groups": [role]
+  }, privateKey, {
+    algorithm: "RS256",
+    keyid: kid,
+    expiresIn: "5m"
+  });
+}
 
 const app = require("../index");
 let server;
@@ -37,12 +90,7 @@ test("POST /api/incidents requires authentication before validating the report",
 });
 
 test("POST /api/incidents rejects a missing description for a signed-in user", async () => {
-  const token = jwt.sign({ sub: "user-1", role: "user" }, process.env.JWT_SECRET, {
-    algorithm: "HS256",
-    issuer: process.env.JWT_ISSUER,
-    audience: process.env.JWT_AUDIENCE,
-    expiresIn: "5m"
-  });
+  const token = createCognitoToken({ sub: "user-1", role: "user" });
 
   const response = await submitEmptyReport(token);
   assert.equal(response.status, 400);
@@ -70,12 +118,7 @@ test("POST /api/incidents stores the signed-in user as owner when the body names
     return {};
   });
 
-  const token = jwt.sign({ sub: "user-1", role: "user" }, process.env.JWT_SECRET, {
-    algorithm: "HS256",
-    issuer: process.env.JWT_ISSUER,
-    audience: process.env.JWT_AUDIENCE,
-    expiresIn: "5m"
-  });
+  const token = createCognitoToken({ sub: "user-1", role: "user" });
 
   const response = await fetch(url, {
     method: "POST",
@@ -121,12 +164,7 @@ for (const [userId, expectedStatus] of [["user-1", 200], ["user-2", 404]]) {
     const db = require("../src/config/dynamodb");
     t.mock.method(db, "send", async () => ({ Item: ownedReport }));
 
-    const token = jwt.sign({ sub: userId, role: "user" }, process.env.JWT_SECRET, {
-      algorithm: "HS256",
-      issuer: process.env.JWT_ISSUER,
-      audience: process.env.JWT_AUDIENCE,
-      expiresIn: "5m"
-    });
+    const token = createCognitoToken({ sub: userId, role: "user" });
 
     const response = await fetch(`${url}/${ownedReport.incident_id}`, {
       headers: { Authorization: `Bearer ${token}` }
@@ -157,12 +195,7 @@ test("GET /api/incidents lists reports for the signed-in user even if another us
     return { Items: [report] };
   });
 
-  const token = jwt.sign({ sub: "user-1", role: "user" }, process.env.JWT_SECRET, {
-    algorithm: "HS256",
-    issuer: process.env.JWT_ISSUER,
-    audience: process.env.JWT_AUDIENCE,
-    expiresIn: "5m"
-  });
+  const token = createCognitoToken({ sub: "user-1", role: "user" });
 
   const response = await fetch(`${url}?user_id=user-2`, {
     headers: { Authorization: `Bearer ${token}` }
@@ -194,12 +227,7 @@ test("My Reports uses the returned cursor to fetch the next page", async (t) => 
     return { Items: [older] };
   });
 
-  const token = jwt.sign({ sub: "user-1", role: "user" }, process.env.JWT_SECRET, {
-    algorithm: "HS256",
-    issuer: process.env.JWT_ISSUER,
-    audience: process.env.JWT_AUDIENCE,
-    expiresIn: "5m"
-  });
+  const token = createCognitoToken({ sub: "user-1", role: "user" });
   const headers = { Authorization: `Bearer ${token}` };
 
   const first = await fetch(url, { headers });
@@ -221,12 +249,7 @@ test("a regular user cannot change an incident status", async (t) => {
   const db = require("../src/config/dynamodb");
   const databaseCall = t.mock.method(db, "send", async () => ({}));
 
-  const token = jwt.sign({ sub: "user-1", role: "user" }, process.env.JWT_SECRET, {
-    algorithm: "HS256",
-    issuer: process.env.JWT_ISSUER,
-    audience: process.env.JWT_AUDIENCE,
-    expiresIn: "5m"
-  });
+  const token = createCognitoToken({ sub: "user-1", role: "user" });
 
   const response = await fetch(`${url}/inc-1/status`, {
     method: "PATCH",
@@ -264,12 +287,7 @@ test("an admin can move an open incident under review", async (t) => {
     };
   });
 
-  const token = jwt.sign({ sub: "admin-1", role: "admin" }, process.env.JWT_SECRET, {
-    algorithm: "HS256",
-    issuer: process.env.JWT_ISSUER,
-    audience: process.env.JWT_AUDIENCE,
-    expiresIn: "5m"
-  });
+  const token = createCognitoToken({ sub: "admin-1", role: "admin" });
 
   const response = await fetch(`${url}/inc-1/status`, {
     method: "PATCH",
@@ -310,12 +328,7 @@ for (const [scenario, existing, expectedStatus, expectedCode] of reviewConflicts
       return existing ? { Item: existing } : {};
     });
 
-    const token = jwt.sign({ sub: "admin-2", role: "admin" }, process.env.JWT_SECRET, {
-      algorithm: "HS256",
-      issuer: process.env.JWT_ISSUER,
-      audience: process.env.JWT_AUDIENCE,
-      expiresIn: "5m"
-    });
+    const token = createCognitoToken({ sub: "admin-2", role: "admin" });
 
     const response = await fetch(`${url}/inc-1/status`, {
       method: "PATCH",
@@ -338,12 +351,7 @@ test("resolving an incident requires a nonblank resolution note", async (t) => {
   const db = require("../src/config/dynamodb");
   const databaseCall = t.mock.method(db, "send", async () => ({}));
 
-  const token = jwt.sign({ sub: "admin-1", role: "admin" }, process.env.JWT_SECRET, {
-    algorithm: "HS256",
-    issuer: process.env.JWT_ISSUER,
-    audience: process.env.JWT_AUDIENCE,
-    expiresIn: "5m"
-  });
+  const token = createCognitoToken({ sub: "admin-1", role: "admin" });
 
   const response = await fetch(`${url}/inc-1/status`, {
     method: "PATCH",
@@ -393,12 +401,7 @@ test("an admin resolves an incident under review with trimmed notes and an audit
     } };
   });
 
-  const token = jwt.sign({ sub: "admin-1", role: "admin" }, process.env.JWT_SECRET, {
-    algorithm: "HS256",
-    issuer: process.env.JWT_ISSUER,
-    audience: process.env.JWT_AUDIENCE,
-    expiresIn: "5m"
-  });
+  const token = createCognitoToken({ sub: "admin-1", role: "admin" });
 
   const response = await fetch(`${url}/inc-1/status`, {
     method: "PATCH",
@@ -426,12 +429,7 @@ test("a regular user cannot list reports through the admin dashboard", async (t)
   const db = require("../src/config/dynamodb");
   const databaseCall = t.mock.method(db, "send", async () => ({}));
 
-  const token = jwt.sign({ sub: "user-1", role: "user" }, process.env.JWT_SECRET, {
-    algorithm: "HS256",
-    issuer: process.env.JWT_ISSUER,
-    audience: process.env.JWT_AUDIENCE,
-    expiresIn: "5m"
-  });
+  const token = createCognitoToken({ sub: "user-1", role: "user" });
 
   const response = await fetch(`${url}/admin/reports?status=open`, {
     headers: { Authorization: `Bearer ${token}` }
@@ -459,12 +457,7 @@ test("an admin can list open incidents across owners", async (t) => {
     return { Items: reports.filter(report => report.status === "open") };
   });
 
-  const token = jwt.sign({ sub: "admin-1", role: "admin" }, process.env.JWT_SECRET, {
-    algorithm: "HS256",
-    issuer: process.env.JWT_ISSUER,
-    audience: process.env.JWT_AUDIENCE,
-    expiresIn: "5m"
-  });
+  const token = createCognitoToken({ sub: "admin-1", role: "admin" });
 
   const response = await fetch(`${url}/admin/reports?status=open`, {
     headers: { Authorization: `Bearer ${token}` }
@@ -494,12 +487,7 @@ test("an admin can continue past an empty filtered page to find an open report",
     return { Items: [openReport] };
   });
 
-  const token = jwt.sign({ sub: "admin-1", role: "admin" }, process.env.JWT_SECRET, {
-    algorithm: "HS256",
-    issuer: process.env.JWT_ISSUER,
-    audience: process.env.JWT_AUDIENCE,
-    expiresIn: "5m"
-  });
+  const token = createCognitoToken({ sub: "admin-1", role: "admin" });
   const headers = { Authorization: `Bearer ${token}` };
   const endpoint = `${url}/admin/reports?status=open`;
 
@@ -526,12 +514,7 @@ test("an admin can search incident reports by exact vehicle plate", async (t) =>
     return { Items: plate === undefined ? items : items.filter(item => item.vehicle_plate === plate) };
   });
 
-  const token = jwt.sign({ sub: "admin-1", role: "admin" }, process.env.JWT_SECRET, {
-    algorithm: "HS256",
-    issuer: process.env.JWT_ISSUER,
-    audience: process.env.JWT_AUDIENCE,
-    expiresIn: "5m"
-  });
+  const token = createCognitoToken({ sub: "admin-1", role: "admin" });
 
   const response = await fetch(`${url}/admin/reports?vehicle_plate=ABC123`, {
     headers: { Authorization: `Bearer ${token}` }
@@ -558,12 +541,7 @@ test("admin search combines status and plate and rejects a cursor after the plat
     return { Items: [], LastEvaluatedKey: { incident_id: "inc-25" } };
   });
 
-  const token = jwt.sign({ sub: "admin-1", role: "admin" }, process.env.JWT_SECRET, {
-    algorithm: "HS256",
-    issuer: process.env.JWT_ISSUER,
-    audience: process.env.JWT_AUDIENCE,
-    expiresIn: "5m"
-  });
+  const token = createCognitoToken({ sub: "admin-1", role: "admin" });
   const headers = { Authorization: `Bearer ${token}` };
   const endpoint = `${url}/admin/reports`;
 
@@ -598,12 +576,7 @@ test("an admin can filter incident reports by exact parking spot", async (t) => 
     };
   });
 
-  const token = jwt.sign({ sub: "admin-1", role: "admin" }, process.env.JWT_SECRET, {
-    algorithm: "HS256",
-    issuer: process.env.JWT_ISSUER,
-    audience: process.env.JWT_AUDIENCE,
-    expiresIn: "5m"
-  });
+  const token = createCognitoToken({ sub: "admin-1", role: "admin" });
 
   const response = await fetch(`${url}/admin/reports?spot_id=A1`, {
     headers: { Authorization: `Bearer ${token}` }
@@ -631,12 +604,7 @@ test("admin search combines status, plate and spot and rejects a cursor from ano
     return { Items: [], LastEvaluatedKey: { incident_id: "inc-25" } };
   });
 
-  const token = jwt.sign({ sub: "admin-1", role: "admin" }, process.env.JWT_SECRET, {
-    algorithm: "HS256",
-    issuer: process.env.JWT_ISSUER,
-    audience: process.env.JWT_AUDIENCE,
-    expiresIn: "5m"
-  });
+  const token = createCognitoToken({ sub: "admin-1", role: "admin" });
   const headers = { Authorization: `Bearer ${token}` };
   const endpoint = `${url}/admin/reports`;
   const params = new URLSearchParams({
@@ -672,16 +640,7 @@ test("POST /api/incidents returns 409 for a duplicate incident", async (t) => {
     });
   });
 
-  const token = jwt.sign(
-    { sub: "user-1", role: "user" },
-    process.env.JWT_SECRET,
-    {
-      algorithm: "HS256",
-      issuer: process.env.JWT_ISSUER,
-      audience: process.env.JWT_AUDIENCE,
-      expiresIn: "5m"
-    }
-  );
+  const token = createCognitoToken({ sub: "user-1", role: "user" });
 
   const response = await fetch(url, {
     method: "POST",
@@ -735,16 +694,7 @@ test("POST /api/incidents rejects oversized descriptions before accessing Dynamo
   const db = require("../src/config/dynamodb");
   const databaseCall = t.mock.method(db, "send", async () => ({}));
 
-  const token = jwt.sign(
-    { sub: "user-1", role: "user" },
-    process.env.JWT_SECRET,
-    {
-      algorithm: "HS256",
-      issuer: process.env.JWT_ISSUER,
-      audience: process.env.JWT_AUDIENCE,
-      expiresIn: "5m"
-    }
-  );
+  const token = createCognitoToken({ sub: "user-1", role: "user" });
 
   const response = await fetch(url, {
     method: "POST",
@@ -776,16 +726,7 @@ test("POST /api/incidents rejects unsafe input before accessing DynamoDB", async
   const db = require("../src/config/dynamodb");
   const databaseCall = t.mock.method(db, "send", async () => ({}));
 
-  const token = jwt.sign(
-    { sub: "user-1", role: "user" },
-    process.env.JWT_SECRET,
-    {
-      algorithm: "HS256",
-      issuer: process.env.JWT_ISSUER,
-      audience: process.env.JWT_AUDIENCE,
-      expiresIn: "5m"
-    }
-  );
+  const token = createCognitoToken({ sub: "user-1", role: "user" });
 
   const response = await fetch(url, {
     method: "POST",
@@ -870,4 +811,136 @@ test("unknown endpoint returns a safe JSON error", async () => {
       message: "The requested endpoint does not exist."
     }
   });
+});
+
+test("API rejects legacy HS256 authentication tokens", async () => {
+  const token = jwt.sign({
+    sub: "user-1",
+    role: "admin",
+    iss: process.env.COGNITO_ISSUER,
+    client_id: process.env.COGNITO_CLIENT_ID,
+    token_use: "access",
+    "cognito:groups": ["admin"]
+  }, "test-only-legacy-secret", {
+    algorithm: "HS256",
+    expiresIn: "5m"
+  });
+
+  const response = await submitEmptyReport(token);
+
+  assert.equal(response.status, 401);
+  assert.equal(
+    response.headers.get("www-authenticate"),
+    "Bearer"
+  );
+
+  assert.deepEqual(await response.json(), {
+    success: false,
+    error: {
+      code: "UNAUTHORIZED",
+      message: "A valid access token is required."
+    }
+  });
+});
+
+test("API rejects unmapped Cognito users", async () => {
+  const token = createCognitoToken({
+    sub: "unregistered-cognito-user",
+    role: "user"
+  });
+
+  const response = await submitEmptyReport(token);
+
+  assert.equal(response.status, 401);
+
+  assert.deepEqual(await response.json(), {
+    success: false,
+    error: {
+      code: "UNAUTHORIZED",
+      message: "A valid access token is required."
+    }
+  });
+});
+
+test("API rejects Cognito ID tokens", async () => {
+  const token = jwt.sign({
+    sub: "user-1",
+    iss: process.env.COGNITO_ISSUER,
+    aud: process.env.COGNITO_CLIENT_ID,
+    token_use: "id",
+    "cognito:groups": ["user"]
+  }, privateKey, {
+    algorithm: "RS256",
+    keyid: kid,
+    expiresIn: "5m"
+  });
+
+  const response = await submitEmptyReport(token);
+
+  assert.equal(response.status, 401);
+
+  assert.deepEqual(await response.json(), {
+    success: false,
+    error: {
+      code: "UNAUTHORIZED",
+      message: "A valid access token is required."
+    }
+  });
+});
+
+test("API rejects conflicting Cognito roles", async () => {
+  const token = jwt.sign({
+    sub: "user-1",
+    iss: process.env.COGNITO_ISSUER,
+    client_id: process.env.COGNITO_CLIENT_ID,
+    token_use: "access",
+    "cognito:groups": ["user", "admin"]
+  }, privateKey, {
+    algorithm: "RS256",
+    keyid: kid,
+    expiresIn: "5m"
+  });
+
+  const response = await fetch(`${url}/admin/reports`, {
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
+
+  assert.equal(response.status, 401);
+
+  assert.deepEqual(await response.json(), {
+    success: false,
+    error: {
+      code: "UNAUTHORIZED",
+      message: "A valid access token is required."
+    }
+  });
+});
+
+test("API returns 503 when Cognito configuration is missing", async () => {
+  const token = createCognitoToken({
+    sub: "user-1",
+    role: "user"
+  });
+
+  const originalIssuer = process.env.COGNITO_ISSUER;
+
+  try {
+    delete process.env.COGNITO_ISSUER;
+
+    const response = await submitEmptyReport(token);
+
+    assert.equal(response.status, 503);
+
+    assert.deepEqual(await response.json(), {
+      success: false,
+      error: {
+        code: "AUTH_UNAVAILABLE",
+        message: "Authentication is unavailable."
+      }
+    });
+  } finally {
+    process.env.COGNITO_ISSUER = originalIssuer;
+  }
 });

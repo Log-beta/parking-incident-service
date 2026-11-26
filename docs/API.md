@@ -603,3 +603,15 @@ Both roles and their inline policies were provisioned and
 verified in Floci. Actual IAM permission enforcement remains
 unverified.
 
+
+## AWS CloudWatch
+
+Log group: /ecs/parking-incidents
+Retention period: 14 days.
+
+CloudWatch log group and stream provisioning were completed
+in Floci. Publishing and retrieving a structured synthetic
+audit event were successfully verified.
+
+Automatic application log delivery through ECS remains pending.
+

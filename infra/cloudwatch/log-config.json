@@ -1,0 +1,4 @@
+{
+  "logGroupName": "/ecs/parking-incidents",
+  "retentionInDays": 14
+}

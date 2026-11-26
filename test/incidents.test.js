@@ -708,3 +708,25 @@ test("POST /api/incidents returns 409 for a duplicate incident", async (t) => {
 
   assert.equal(write.mock.callCount(), 1);
 });
+test("API responses include essential security headers", async () => {
+  const response = await fetch(
+    url.replace("/api/incidents", "/health")
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+  assert.equal(response.headers.get("x-frame-options"), "DENY");
+  assert.equal(response.headers.get("x-powered-by"), null);
+  assert.ok(response.headers.get("content-security-policy"));
+});
+
+test("rejected requests also include security headers", async () => {
+  const response = await submitEmptyReport();
+
+  assert.equal(response.status, 401);
+  assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+  assert.equal(response.headers.get("x-frame-options"), "DENY");
+  assert.equal(response.headers.get("x-powered-by"), null);
+  assert.equal(response.headers.get("referrer-policy"), "no-referrer");
+  assert.ok(response.headers.get("content-security-policy"));
+});

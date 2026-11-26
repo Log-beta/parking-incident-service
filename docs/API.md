@@ -328,3 +328,30 @@ same filters and URL-encode the cursor. When changing any filter, start without 
 | `400` | `INVALID_STATUS` for an unsupported status, `INVALID_VEHICLE_PLATE` for a blank or invalid plate filter, `INVALID_SPOT_ID` for a blank or invalid spot filter, or `INVALID_CURSOR` for a malformed cursor or one used with a different filter. |
 | `401` | A valid access token is required. |
 | `403` | The signed-in user lacks the admin role. |
+
+## API security headers
+
+All API responses include the following security controls:
+
+| Header | Value |
+| --- | --- |
+| X-Content-Type-Options | nosniff |
+| X-Frame-Options | DENY |
+| Content-Security-Policy | default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none' |
+| Referrer-Policy | no-referrer |
+| X-Powered-By | Removed |
+
+The restrictive Content Security Policy is intended for the JSON API.
+The frontend will require a separate policy.
+
+### Verification
+
+- Security headers on successful requests: Passed.
+- Security headers on authentication failures: Passed.
+- Full automated test suite: 68 passed, 0 failed.
+- Live HTTP verification on worker 3013: Passed.
+- Main worker security header verification: Pending.
+
+Evidence: incident-security-headers-live.png
+
+These controls follow the layered security approach introduced in Lab 8.

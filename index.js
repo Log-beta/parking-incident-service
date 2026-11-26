@@ -23,6 +23,19 @@ app.use((req, res, next) => {
   next();
 });
 
+app.disable("x-powered-by");
+
+app.use((req, res, next) => {
+  res.set({
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+    "Referrer-Policy": "no-referrer"
+  });
+
+  next();
+});
+
 app.use(express.json());
 
 app.get("/", (req, res) => {

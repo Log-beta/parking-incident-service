@@ -615,3 +615,29 @@ audit event were successfully verified.
 
 Automatic application log delivery through ECS remains pending.
 
+
+## Docker and AWS ECS
+
+Docker image: parking-incidents:latest
+
+The application is packaged using Node.js 22 Alpine,
+production dependencies and a non-root container user.
+
+ECS task definition:
+- Family: parking-incidents
+- Compatibility: FARGATE
+- CPU: 256 units
+- Memory: 512 MiB
+- Container port: 3003
+- Dedicated IAM task and execution roles
+- CloudWatch awslogs configuration
+
+Verification:
+- Docker image built successfully.
+- Docker-to-Floci connectivity returned HTTP 200.
+- Secrets Manager retrieval from inside Docker succeeded.
+- ECS task definition revision 1 registered as ACTIVE.
+
+Full container startup, ECS service execution and shared
+network integration remain pending.
+

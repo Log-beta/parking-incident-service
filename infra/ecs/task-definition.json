@@ -1,0 +1,35 @@
+{
+  "family": "parking-incidents",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "taskRoleArn": "arn:aws:iam::000000000000:role/parking-incidents-task-role",
+  "executionRoleArn": "arn:aws:iam::000000000000:role/parking-incidents-execution-role",
+  "containerDefinitions": [
+    {
+      "name": "parking-incidents",
+      "image": "parking-incidents:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 3003,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {"name": "PORT", "value": "3003"},
+        {"name": "AWS_REGION", "value": "us-east-1"},
+        {"name": "RUNTIME_SECRET_ID", "value": "parking/incidents/runtime"}
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/parking-incidents",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "incidents"
+        }
+      }
+    }
+  ]
+}

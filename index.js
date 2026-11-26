@@ -1,3 +1,8 @@
+if (require.main === module) {
+  console.error("Use npm start to initialize the service securely.");
+  process.exit(1);
+}
+
 const { checkIncidentReservation } = require("./src/controllers/reservationCheckController");
 const { verifyTurnstile } = require("./src/services/turnstile");
 const { auditLog } = require("./src/utils/auditLogger");
@@ -203,13 +208,5 @@ app.use((req, res) => {
 });
 
 app.use(errorHandler);
-
-if (require.main === module) {
-  const { validateAuthConfig } = require("./src/middleware/authConfig");
-  validateAuthConfig();
-  app.listen(port, () => {
-    console.log(`${instanceId} listening on http://localhost:${port}`);
-  });
-}
 
 module.exports = app;

@@ -265,6 +265,7 @@ test("a regular user cannot change an incident status", async (t) => {
 });
 
 test("an admin can move an open incident under review", async (t) => {
+  const logMock = t.mock.method(console, "log", () => {});
   const db = require("../src/config/dynamodb");
   const { UpdateCommand } = require("@aws-sdk/lib-dynamodb");
 
@@ -304,6 +305,24 @@ test("an admin can move an open incident under review", async (t) => {
   assert.equal(body.success, true);
   assert.equal(body.data.status, "under_review");
   assert.equal(body.data.updated_by, "admin-1");
+
+  const records = logMock.mock.calls.map(
+    call => JSON.parse(call.arguments[0])
+  );
+
+  const record = records.find(
+    entry => entry.event === "INCIDENT_REVIEW_STARTED"
+  );
+
+  assert.ok(record);
+  assert.equal(record.userId, "admin-1");
+  assert.equal(record.role, "admin");
+  assert.equal(record.incidentId, "inc-1");
+  assert.equal(record.previousStatus, "open");
+  assert.equal(record.newStatus, "under_review");
+  assert.equal(record.statusCode, 200);
+  assert.equal(record.outcome, "success");
+  assert.ok(!JSON.stringify(records).includes(token));
 });
 
 const reviewConflicts = [
@@ -369,6 +388,7 @@ test("resolving an incident requires a nonblank resolution note", async (t) => {
 });
 
 test("an admin resolves an incident under review with trimmed notes and an audit timestamp", async (t) => {
+  const logMock = t.mock.method(console, "log", () => {});
   const db = require("../src/config/dynamodb");
   const { UpdateCommand } = require("@aws-sdk/lib-dynamodb");
   const note = "Vehicle moved and bay A1 is clear.";
@@ -423,6 +443,25 @@ test("an admin resolves an incident under review with trimmed notes and an audit
   assert.equal(body.data.resolution_notes, note);
   assert.equal(body.data.resolved_by, "admin-1");
   assert.equal(write.mock.callCount(), 1);
+
+  const records = logMock.mock.calls.map(
+    call => JSON.parse(call.arguments[0])
+  );
+
+  const record = records.find(
+    entry => entry.event === "INCIDENT_RESOLVED"
+  );
+
+  assert.ok(record);
+  assert.equal(record.userId, "admin-1");
+  assert.equal(record.role, "admin");
+  assert.equal(record.incidentId, "inc-1");
+  assert.equal(record.previousStatus, "under_review");
+  assert.equal(record.newStatus, "resolved");
+  assert.equal(record.statusCode, 200);
+  assert.equal(record.outcome, "success");
+  assert.ok(!JSON.stringify(records).includes(token));
+  assert.ok(!JSON.stringify(records).includes(note));
 });
 
 test("a regular user cannot list reports through the admin dashboard", async (t) => {
@@ -943,4 +982,217 @@ test("API returns 503 when Cognito configuration is missing", async () => {
   } finally {
     process.env.COGNITO_ISSUER = originalIssuer;
   }
+});
+
+test("rejected authentication generates a safe audit event", async (t) => {
+  const logMock = t.mock.method(console, "log", () => {});
+
+  const response = await submitEmptyReport("invalid-test-token");
+
+  assert.equal(response.status, 401);
+
+  const records = logMock.mock.calls.map(
+    call => JSON.parse(call.arguments[0])
+  );
+
+  const record = records.find(
+    entry => entry.event === "AUTH_FAILURE"
+  );
+
+  assert.ok(record);
+  assert.equal(record.statusCode, 401);
+  assert.equal(record.outcome, "denied");
+  assert.equal(record.reason, "INVALID_CREDENTIALS");
+
+  assert.ok(
+    !JSON.stringify(records).includes("invalid-test-token")
+  );
+});
+
+test("administrator access denial generates an audit event", async (t) => {
+  const logMock = t.mock.method(console, "log", () => {});
+
+  const token = createCognitoToken({
+    sub: "user-1",
+    role: "user"
+  });
+
+  const response = await fetch(`${url}/admin/reports`, {
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
+
+  assert.equal(response.status, 403);
+
+  const records = logMock.mock.calls.map(
+    call => JSON.parse(call.arguments[0])
+  );
+
+  const record = records.find(
+    entry => entry.event === "ADMIN_ACCESS_DENIED"
+  );
+
+  assert.ok(record);
+  assert.equal(record.userId, "user-1");
+  assert.equal(record.role, "user");
+  assert.equal(record.statusCode, 403);
+  assert.equal(record.outcome, "denied");
+  assert.equal(record.reason, "ADMIN_REQUIRED");
+
+  assert.ok(!JSON.stringify(records).includes(token));
+});
+
+test("incident ownership denial generates an audit event", async (t) => {
+  const db = require("../src/config/dynamodb");
+
+  t.mock.method(db, "send", async () => ({
+    Item: {
+      incident_id: "incident-audit-test",
+      user_id: "user-1",
+      status: "open"
+    }
+  }));
+
+  const logMock = t.mock.method(console, "log", () => {});
+
+  const token = createCognitoToken({
+    sub: "user-2",
+    role: "user"
+  });
+
+  const response = await fetch(`${url}/incident-audit-test`, {
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
+
+  assert.equal(response.status, 404);
+
+  const records = logMock.mock.calls.map(
+    call => JSON.parse(call.arguments[0])
+  );
+
+  const record = records.find(
+    entry => entry.event === "INCIDENT_ACCESS_DENIED"
+  );
+
+  assert.ok(record);
+  assert.equal(record.userId, "user-2");
+  assert.equal(record.statusCode, 404);
+  assert.equal(record.outcome, "denied");
+  assert.equal(record.reason, "OWNERSHIP_MISMATCH");
+
+  assert.ok(!JSON.stringify(records).includes(token));
+  assert.ok(!JSON.stringify(records).includes("user-1"));
+});
+
+test("successful incident creation generates a safe audit event", async (t) => {
+  const db = require("../src/config/dynamodb");
+
+  t.mock.method(db, "send", async () => ({}));
+
+  const logMock = t.mock.method(console, "log", () => {});
+
+  const token = createCognitoToken({
+    sub: "user-1",
+    role: "user"
+  });
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify({
+      description: "Private incident description",
+      vehicle_plate: "AUDIT123",
+      spot_id: "A1",
+      incident_type: "unauthorized_parking"
+    })
+  });
+
+  assert.equal(response.status, 201);
+
+  const body = await response.json();
+
+  const records = logMock.mock.calls.map(
+    call => JSON.parse(call.arguments[0])
+  );
+
+  const record = records.find(
+    entry => entry.event === "INCIDENT_CREATED"
+  );
+
+  assert.ok(record);
+  assert.equal(record.userId, "user-1");
+  assert.equal(record.role, "user");
+  assert.equal(record.incidentId, body.data.incident_id);
+  assert.equal(record.statusCode, 201);
+  assert.equal(record.outcome, "success");
+
+  const output = JSON.stringify(records);
+
+  assert.ok(!output.includes(token));
+  assert.ok(!output.includes("AUDIT123"));
+  assert.ok(!output.includes("Private incident description"));
+});
+
+test("duplicate incident rejection generates a safe audit event", async (t) => {
+  const db = require("../src/config/dynamodb");
+
+  t.mock.method(db, "send", async () => {
+    const error = new Error("Transaction cancelled");
+    error.name = "TransactionCanceledException";
+    error.CancellationReasons = [
+      { Code: "ConditionalCheckFailed" },
+      { Code: "None" }
+    ];
+    throw error;
+  });
+
+  const logMock = t.mock.method(console, "log", () => {});
+
+  const token = createCognitoToken({
+    sub: "user-1",
+    role: "user"
+  });
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify({
+      description: "Private duplicate description",
+      vehicle_plate: "DUP123",
+      spot_id: "A1",
+      incident_type: "unauthorized_parking"
+    })
+  });
+
+  assert.equal(response.status, 409);
+
+  const records = logMock.mock.calls.map(
+    call => JSON.parse(call.arguments[0])
+  );
+
+  const record = records.find(
+    entry => entry.event === "DUPLICATE_INCIDENT_REJECTED"
+  );
+
+  assert.ok(record);
+  assert.equal(record.userId, "user-1");
+  assert.equal(record.role, "user");
+  assert.equal(record.statusCode, 409);
+  assert.equal(record.outcome, "denied");
+  assert.equal(record.reason, "DUPLICATE_INCIDENT");
+
+  const output = JSON.stringify(records);
+
+  assert.ok(!output.includes(token));
+  assert.ok(!output.includes("DUP123"));
+  assert.ok(!output.includes("Private duplicate description"));
 });

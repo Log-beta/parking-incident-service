@@ -1,3 +1,4 @@
+const { auditLog } = require("../utils/auditLogger");
 function errorHandler(error, req, res, next) {
   if (res.headersSent) {
     return next(error);
@@ -23,7 +24,12 @@ function errorHandler(error, req, res, next) {
     });
   }
 
-  console.error("Unhandled API error:", error.name || "Error");
+  auditLog("UNHANDLED_API_ERROR", {
+    method: req.method,
+    statusCode: 500,
+    outcome: "failure",
+    reason: "UNEXPECTED_ERROR"
+  });
 
   return res.status(500).json({
     success: false,

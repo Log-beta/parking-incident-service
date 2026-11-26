@@ -1,3 +1,4 @@
+const { auditLog } = require("../utils/auditLogger");
 function createRateLimiter(maxRequests = 60, windowMs = 60000) {
   if (!Number.isSafeInteger(maxRequests) || maxRequests < 1) {
     throw new Error("Rate limit must be a positive integer.");
@@ -63,6 +64,12 @@ function createRateLimitMiddleware({
     const clientId = req.ip || req.socket.remoteAddress;
 
     if (!limiter.isAllowed(clientId)) {
+      auditLog("RATE_LIMIT_EXCEEDED", {
+        method: req.method,
+        statusCode: 429,
+        outcome: "denied",
+        reason: "REQUEST_LIMIT_EXCEEDED"
+      });
       res.set("Retry-After", String(Math.ceil(windowMs / 1000)));
 
       return res.status(429).json({

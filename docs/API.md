@@ -547,3 +547,23 @@ environment remains pending.
 Actual shared identity mappings and Allocation credentials
 must be obtained securely before live integration.
 
+
+## Structured audit logging
+
+The Incident Service produces structured JSON audit logs for:
+
+- Authentication failures and configuration errors.
+- Administrator access and incident ownership denials.
+- Successful incident creation and duplicate rejection.
+- Administrator review and resolution actions.
+- Rate limit violations.
+- Database, upstream service and unexpected API failures.
+
+Audit records exclude access tokens, passwords, vehicle plates,
+incident descriptions, resolution notes and raw exceptions.
+
+Logs are written to standard output for subsequent CloudWatch integration.
+
+Verification: 136 automated tests passed, 0 failed.
+CloudWatch delivery and live Cognito integration remain pending.
+

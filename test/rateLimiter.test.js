@@ -1,4 +1,4 @@
-﻿const test = require("node:test");
+const test = require("node:test");
 const assert = require("node:assert/strict");
 const { createRateLimiter } = require("../src/middleware/rateLimiter");
 
@@ -50,6 +50,7 @@ test("cleanup removes expired clients while preserving active clients", () => {
 });
 
 test("rate limiting middleware returns HTTP 429 when the limit is exceeded", async (t) => {
+  const logMock = t.mock.method(console, "log", () => {});
   const express = require("express");
   const { once } = require("node:events");
   const { createRateLimitMiddleware } = require("../src/middleware/rateLimiter");
@@ -89,4 +90,23 @@ test("rate limiting middleware returns HTTP 429 when the limit is exceeded", asy
   });
 
   assert.ok(Number(third.headers.get("retry-after")) > 0);
+
+  const records = logMock.mock.calls.map(
+    call => JSON.parse(call.arguments[0])
+  );
+
+  const events = records.filter(
+    entry => entry.event === "RATE_LIMIT_EXCEEDED"
+  );
+
+  assert.equal(events.length, 1);
+
+  const record = events[0];
+
+  assert.equal(record.method, "GET");
+  assert.equal(record.statusCode, 429);
+  assert.equal(record.outcome, "denied");
+  assert.equal(record.reason, "REQUEST_LIMIT_EXCEEDED");
+  assert.equal(Object.hasOwn(record, "ip"), false);
+  assert.equal(Object.hasOwn(record, "clientId"), false);
 });

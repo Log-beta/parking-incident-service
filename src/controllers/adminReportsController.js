@@ -1,4 +1,5 @@
-﻿const { listAdminReports } = require("../repositories/dynamodb/incidentRepository");
+const { auditLog } = require("../utils/auditLogger");
+const { listAdminReports } = require("../repositories/dynamodb/incidentRepository");
 
 const allowedStatuses = new Set(["open", "under_review", "resolved"]);
 
@@ -81,7 +82,7 @@ async function getAdminReports(req, res) {
 
     return res.json({ success: true, data: { items, next_cursor: nextCursor } });
   } catch (error) {
-    console.error("Failed to list admin reports:", error.message);
+    auditLog("ADMIN_REPORTS_FAILED", { statusCode: 500, outcome: "failure", reason: "DATABASE_READ_FAILED" });
     return res.status(500).json({
       success: false,
       error: { code: "ADMIN_LIST_FAILED", message: "Failed to list incident reports." }

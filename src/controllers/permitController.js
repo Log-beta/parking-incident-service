@@ -1,4 +1,5 @@
-﻿const { getReservationValidity } = require("../services/allocationClient");
+const { auditLog } = require("../utils/auditLogger");
+const { getReservationValidity } = require("../services/allocationClient");
 const { verifyPermit } = require("../services/permitVerification");
 const { savePermitVerification } = require("../repositories/dynamodb/permitVerificationRepository");
 
@@ -35,7 +36,7 @@ async function verifyIncidentPermit(req, res) {
   try {
     allocation = await getReservationValidity(reservationId);
   } catch (error) {
-    console.error("Allocation client error:", error.message);
+    auditLog("ALLOCATION_CLIENT_ERROR", { outcome: "failure", reason: "UPSTREAM_SERVICE_ERROR" });
   }
 
   const result = verifyPermit(allocation, {
@@ -53,7 +54,7 @@ async function verifyIncidentPermit(req, res) {
       result
     });
   } catch (error) {
-    console.error("Permit verification logging error:", error.message);
+    auditLog("PERMIT_LOG_FAILED", { outcome: "failure", reason: "DATABASE_WRITE_FAILED" });
   }
 
   if (result === "unverified") {

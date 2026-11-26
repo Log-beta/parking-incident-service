@@ -1,4 +1,5 @@
-﻿const { listIncidentsByOwner } = require("../repositories/dynamodb/incidentRepository");
+const { auditLog } = require("../utils/auditLogger");
+const { listIncidentsByOwner } = require("../repositories/dynamodb/incidentRepository");
 
 function readCursor(cursor, userId) {
   if (typeof cursor !== "string" || !/^[A-Za-z0-9_-]+$/.test(cursor)) {
@@ -43,7 +44,7 @@ async function listMyReports(req, res) {
 
     return res.json({ success: true, data: { items, next_cursor: nextCursor } });
   } catch (error) {
-    console.error("Failed to list incident reports:", error.message);
+    auditLog("MY_REPORTS_FAILED", { statusCode: 500, outcome: "failure", reason: "DATABASE_READ_FAILED" });
     return res.status(500).json({
       success: false,
       error: { code: "INCIDENT_LIST_FAILED", message: "Failed to list incident reports." }

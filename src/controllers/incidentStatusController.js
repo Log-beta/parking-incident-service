@@ -1,4 +1,5 @@
-﻿const {
+const { auditLog } = require("../utils/auditLogger");
+const {
   startIncidentReview,
   resolveIncident,
   getIncidentById
@@ -32,10 +33,27 @@ async function updateIncidentStatus(req, res) {
       ? await resolveIncident(incidentId, adminId, resolution_notes)
       : await startIncidentReview(incidentId, adminId);
 
+    auditLog(
+      status === "resolved"
+        ? "INCIDENT_RESOLVED"
+        : "INCIDENT_REVIEW_STARTED",
+      {
+        userId: adminId,
+        role: req.auth.role,
+        incidentId: incidentId,
+        previousStatus: status === "resolved"
+          ? "under_review"
+          : "open",
+        newStatus: status,
+        statusCode: 200,
+        outcome: "success"
+      }
+    );
+
     return res.json({ success: true, data: incident });
   } catch (error) {
     if (error.name !== "ConditionalCheckFailedException") {
-      console.error("Failed to update incident status:", error.message);
+      auditLog("STATUS_UPDATE_FAILED", { statusCode: 500, outcome: "failure", reason: "DATABASE_WRITE_FAILED" });
       return res.status(500).json({
         success: false,
         error: { code: "STATUS_UPDATE_FAILED", message: "Failed to update incident status." }
@@ -62,7 +80,7 @@ async function updateIncidentStatus(req, res) {
       error: { code: "STATUS_CONFLICT", message }
     });
   } catch (error) {
-    console.error("Failed to look up incident after status conflict:", error.message);
+    auditLog("STATUS_LOOKUP_FAILED", { statusCode: 500, outcome: "failure", reason: "DATABASE_READ_FAILED" });
     return res.status(500).json({
       success: false,
       error: { code: "STATUS_UPDATE_FAILED", message: "Failed to update incident status." }

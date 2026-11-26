@@ -1,3 +1,4 @@
+const { auditLog } = require("./src/utils/auditLogger");
 const { errorHandler } = require("./src/middleware/errorHandler");
 const { getAdminReports } = require("./src/controllers/adminReportsController");
 const { updateIncidentStatus } = require("./src/controllers/incidentStatusController");
@@ -79,9 +80,24 @@ app.post("/api/incidents", requireAuth, async (req, res) => {
       incident_type: incident_type.trim()
     });
 
+    auditLog("INCIDENT_CREATED", {
+      userId: req.auth.userId,
+      role: req.auth.role,
+      incidentId: incident.incident_id,
+      statusCode: 201,
+      outcome: "success"
+    });
+
     return res.status(201).json({ success: true, data: incident });
  } catch (error) {
     if (error.code === "DUPLICATE_INCIDENT") {
+      auditLog("DUPLICATE_INCIDENT_REJECTED", {
+        userId: req.auth.userId,
+        role: req.auth.role,
+        statusCode: 409,
+        outcome: "denied",
+        reason: "DUPLICATE_INCIDENT"
+      });
       return res.status(409).json({
         success: false,
         error: {
@@ -91,7 +107,12 @@ app.post("/api/incidents", requireAuth, async (req, res) => {
       });
     }
 
-    console.error("Failed to save incident report:", error);
+    auditLog("INCIDENT_SAVE_FAILED", {
+      userId: req.auth.userId,
+      statusCode: 500,
+      outcome: "failure",
+      reason: "DATABASE_WRITE_FAILED"
+    });
     return res.status(500).json({
       success: false,
       error: {
@@ -113,12 +134,24 @@ app.get("/api/incidents/:id", requireAuth, async (req, res) => {
     const incident = await getIncidentById(req.params.id);
 
     if (!isReportOwner(incident, req.auth.userId)) {
+      auditLog("INCIDENT_ACCESS_DENIED", {
+        userId: req.auth.userId,
+        role: req.auth.role,
+        statusCode: 404,
+        outcome: "denied",
+        reason: "OWNERSHIP_MISMATCH"
+      });
       return res.status(404).json({ success: false, error: { code: "INCIDENT_NOT_FOUND", message: "Incident report not found." } });
     }
 
     return res.json({ success: true, data: incident });
   } catch (error) {
-    console.error("Failed to retrieve incident report:", error);
+    auditLog("INCIDENT_RETRIEVAL_FAILED", {
+      userId: req.auth.userId,
+      statusCode: 500,
+      outcome: "failure",
+      reason: "DATABASE_READ_FAILED"
+    });
     return res.status(500).json({ success: false, error: { code: "INCIDENT_LOOKUP_FAILED", message: "Failed to retrieve incident report." } });
   }
 });

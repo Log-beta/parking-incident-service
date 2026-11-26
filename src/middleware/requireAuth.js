@@ -1,7 +1,14 @@
-﻿const { verifyAccessToken } = require("./cognito");
+const { auditLog } = require("../utils/auditLogger");
+const { verifyAccessToken } = require("./cognito");
 const { getActor } = require("./cognitoIdentity");
 
 function unauthorized(res) {
+  auditLog("AUTH_FAILURE", {
+    statusCode: 401,
+    outcome: "denied",
+    reason: "INVALID_CREDENTIALS"
+  });
+
   return res.set("WWW-Authenticate", "Bearer").status(401).json({
     success: false,
     error: {
@@ -23,6 +30,12 @@ async function requireAuth(req, res, next) {
       !process.env.COGNITO_JWKS_URL?.trim() ||
       (!process.env.COGNITO_USERS_JSON?.trim() &&
        !process.env.COGNITO_USERS_FILE?.trim())) {
+    auditLog("AUTH_UNAVAILABLE", {
+      statusCode: 503,
+      outcome: "failure",
+      reason: "MISSING_AUTH_CONFIGURATION"
+    });
+
     return res.status(503).json({
       success: false,
       error: {
@@ -44,6 +57,13 @@ async function requireAuth(req, res, next) {
 
 function requireAdmin(req, res, next) {
   if (req.auth?.role !== "admin") {
+    auditLog("ADMIN_ACCESS_DENIED", {
+      userId: req.auth?.userId,
+      role: req.auth?.role,
+      statusCode: 403,
+      outcome: "denied",
+      reason: "ADMIN_REQUIRED"
+    });
     return res.status(403).json({
       success: false,
       error: {

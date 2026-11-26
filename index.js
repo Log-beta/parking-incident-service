@@ -1,3 +1,4 @@
+const { requireAuth } = require("./src/middleware/requireAuth");
 const { verifyIncidentPermit } = require("./src/controllers/permitController");
 const { validateIncident } = require("./src/validation/incidentValidation");
 const express = require("express");
@@ -30,7 +31,7 @@ app.get("/health", (req, res) => {
 
 app.post("/api/incidents/verify", verifyIncidentPermit);
 
-app.post("/api/incidents", async (req, res) => {
+app.post("/api/incidents", requireAuth, async (req, res) => {
   const error = validateIncident(req.body);
   if (error) {
     return res.status(400).json({ success: false, error });
@@ -41,6 +42,7 @@ app.post("/api/incidents", async (req, res) => {
   try {
     const incident = await saveIncident({
       incident_id: randomUUID(),
+      user_id: req.auth.userId,
       status: "open",
       created_at: new Date().toISOString(),
       description: description.trim(),

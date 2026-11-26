@@ -227,16 +227,18 @@ The backend takes the admin ID from the verified token and generates the UTC tim
 
 `GET /api/incidents/admin/reports` requires a Bearer token with the `admin` role.
 It lists reports across owners. To filter by status, use `open`, `under_review`,
-or `resolved`. Use `vehicle_plate` for an exact, case-sensitive plate search. Surrounding
-spaces are trimmed. Either filter can be used alone. To use both, request
-`GET /api/incidents/admin/reports?status=resolved&vehicle_plate=TEST123`.
+or `resolved`. Use `vehicle_plate` and `spot_id` for exact, case-sensitive matches.
+Surrounding spaces are trimmed. Each filter is optional. When combining filters,
+a report must match all of them. For example:
+
+`GET /api/incidents/admin/reports?status=resolved&vehicle_plate=TEST123&spot_id=A1`.
 
 A successful request returns `200 OK` with `data.items` and `data.next_cursor`.
 A filtered page can have zero items and still have a cursor. Continue with the
-same filters and URL-encode the cursor. When changing either filter, start without a cursor. Stop when `next_cursor` is `null`.
+same filters and URL-encode the cursor. When changing any filter, start without a cursor. Stop when `next_cursor` is `null`.
 
 | HTTP status | Meaning |
 | --- | --- |
-| `400` | `INVALID_STATUS` for an unsupported status, `INVALID_VEHICLE_PLATE` for a blank or invalid plate filter, or `INVALID_CURSOR` for a malformed cursor or one used with a different filter. |
+| `400` | `INVALID_STATUS` for an unsupported status, `INVALID_VEHICLE_PLATE` for a blank or invalid plate filter, `INVALID_SPOT_ID` for a blank or invalid spot filter, or `INVALID_CURSOR` for a malformed cursor or one used with a different filter. |
 | `401` | A valid access token is required. |
 | `403` | The signed-in user lacks the admin role. |

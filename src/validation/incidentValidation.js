@@ -1,4 +1,4 @@
-﻿const requiredFields = [
+const requiredFields = [
   ["description", "DESCRIPTION_REQUIRED", "A description is required."],
   ["vehicle_plate", "VEHICLE_PLATE_REQUIRED", "A vehicle plate is required."],
   ["spot_id", "SPOT_ID_REQUIRED", "A parking spot ID is required."],
@@ -26,6 +26,15 @@ function validateIncident(body) {
       return {
         code,
         message: `${label} must not exceed ${max} characters.`
+      };
+    }
+  }
+
+  for (const [field] of requiredFields) {
+    if (/[<>]/.test(body[field])) {
+      return {
+        code: "UNSAFE_INPUT",
+        message: "HTML markup and angle brackets are not allowed in incident fields."
       };
     }
   }

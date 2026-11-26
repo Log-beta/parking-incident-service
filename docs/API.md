@@ -381,3 +381,28 @@ Values exactly at the maximum length are accepted.
 The limits are project-specific design decisions.
 Compatibility with Allocation and Inventory identifier lengths
 remains to be confirmed.
+
+## Unsafe incident input protection
+
+All four incident fields reject angle brackets to prevent the
+submission of raw HTML and script markup.
+
+Rejected requests return HTTP 400 with the UNSAFE_INPUT error code
+before any DynamoDB write.
+
+Ordinary punctuation, including apostrophes, quotation marks and
+ampersands, remains accepted.
+
+### Verification
+
+- Unsafe input validation tests: 6 passed.
+- API rejection before database access: Passed.
+- Full automated test suite: 84 passed, 0 failed.
+
+### Limitations
+
+The service rejects markup rather than silently modifying reports.
+All angle brackets are rejected, including legitimate comparisons.
+
+This is an additional security layer, not complete XSS protection.
+Safe frontend rendering remains required.

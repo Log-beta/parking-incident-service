@@ -771,3 +771,44 @@ test("POST /api/incidents rejects oversized descriptions before accessing Dynamo
 
   assert.equal(databaseCall.mock.callCount(), 0);
 });
+
+test("POST /api/incidents rejects unsafe input before accessing DynamoDB", async (t) => {
+  const db = require("../src/config/dynamodb");
+  const databaseCall = t.mock.method(db, "send", async () => ({}));
+
+  const token = jwt.sign(
+    { sub: "user-1", role: "user" },
+    process.env.JWT_SECRET,
+    {
+      algorithm: "HS256",
+      issuer: process.env.JWT_ISSUER,
+      audience: process.env.JWT_AUDIENCE,
+      expiresIn: "5m"
+    }
+  );
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify({
+      description: "<script>alert(1)</script>",
+      vehicle_plate: "ABC123",
+      spot_id: "A1",
+      incident_type: "unauthorized_parking"
+    })
+  });
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    success: false,
+    error: {
+      code: "UNSAFE_INPUT",
+      message: "HTML markup and angle brackets are not allowed in incident fields."
+    }
+  });
+
+  assert.equal(databaseCall.mock.callCount(), 0);
+});

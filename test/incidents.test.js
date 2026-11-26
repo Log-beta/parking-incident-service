@@ -329,3 +329,91 @@ for (const [scenario, existing, expectedStatus, expectedCode] of reviewConflicts
     assert.equal(calls.mock.callCount(), 2);
   });
 }
+
+test("resolving an incident requires a nonblank resolution note", async (t) => {
+  const db = require("../src/config/dynamodb");
+  const databaseCall = t.mock.method(db, "send", async () => ({}));
+
+  const token = jwt.sign({ sub: "admin-1", role: "admin" }, process.env.JWT_SECRET, {
+    algorithm: "HS256",
+    issuer: process.env.JWT_ISSUER,
+    audience: process.env.JWT_AUDIENCE,
+    expiresIn: "5m"
+  });
+
+  const response = await fetch(`${url}/inc-1/status`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ status: "resolved", resolution_notes: "   " })
+  });
+
+  assert.equal(response.status, 400);
+  const body = await response.json();
+  assert.equal(body.error.code, "RESOLUTION_NOTES_REQUIRED");
+  assert.equal(databaseCall.mock.callCount(), 0);
+});
+
+test("an admin resolves an incident under review with trimmed notes and an audit timestamp", async (t) => {
+  const db = require("../src/config/dynamodb");
+  const { UpdateCommand } = require("@aws-sdk/lib-dynamodb");
+  const note = "Vehicle moved and bay A1 is clear.";
+
+  const write = t.mock.method(db, "send", async (command) => {
+    assert.ok(command instanceof UpdateCommand);
+    const input = command.input;
+    const values = input.ExpressionAttributeValues;
+
+    assert.deepEqual(input.Key, { incident_id: "inc-1" });
+    assert.equal(input.ExpressionAttributeNames["#status"], "status");
+    assert.equal(input.ConditionExpression, "#status = :from");
+    assert.equal(values[":from"], "under_review");
+    assert.equal(values[":to"], "resolved");
+    assert.equal(values[":notes"], note);
+    assert.equal(values[":actor"], "admin-1");
+    assert.equal(new Date(values[":now"]).toISOString(), values[":now"]);
+    assert.match(input.UpdateExpression, /#status\s*=\s*:to/);
+    assert.match(input.UpdateExpression, /resolution_notes\s*=\s*:notes/);
+    assert.match(input.UpdateExpression, /resolved_by\s*=\s*:actor/);
+    assert.match(input.UpdateExpression, /resolved_at\s*=\s*:now/);
+    assert.equal(input.ReturnValues, "ALL_NEW");
+
+    return { Attributes: {
+      incident_id: "inc-1",
+      status: "resolved",
+      resolution_notes: values[":notes"],
+      resolved_by: values[":actor"],
+      resolved_at: values[":now"]
+    } };
+  });
+
+  const token = jwt.sign({ sub: "admin-1", role: "admin" }, process.env.JWT_SECRET, {
+    algorithm: "HS256",
+    issuer: process.env.JWT_ISSUER,
+    audience: process.env.JWT_AUDIENCE,
+    expiresIn: "5m"
+  });
+
+  const response = await fetch(`${url}/inc-1/status`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      status: "resolved",
+      resolution_notes: `  ${note}  `,
+      resolved_by: "someone-else"
+    })
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.success, true);
+  assert.equal(body.data.status, "resolved");
+  assert.equal(body.data.resolution_notes, note);
+  assert.equal(body.data.resolved_by, "admin-1");
+  assert.equal(write.mock.callCount(), 1);
+});

@@ -57,4 +57,26 @@ async function startIncidentReview(incidentId, adminId) {
   return result.Attributes;
 }
 
-module.exports = { saveIncident, getIncidentById, listIncidentsByOwner, startIncidentReview };
+async function resolveIncident(incidentId, adminId, resolutionNotes) {
+  const now = new Date().toISOString();
+
+  const result = await db.send(new UpdateCommand({
+    TableName: tableName,
+    Key: { incident_id: incidentId },
+    ConditionExpression: "#status = :from",
+    UpdateExpression: "SET #status = :to, resolution_notes = :notes, resolved_by = :actor, resolved_at = :now, updated_by = :actor, updated_at = :now",
+    ExpressionAttributeNames: { "#status": "status" },
+    ExpressionAttributeValues: {
+      ":from": "under_review",
+      ":to": "resolved",
+      ":notes": resolutionNotes.trim(),
+      ":actor": adminId,
+      ":now": now
+    },
+    ReturnValues: "ALL_NEW"
+  }));
+
+  return result.Attributes;
+}
+
+module.exports = { saveIncident, getIncidentById, listIncidentsByOwner, startIncidentReview, resolveIncident };

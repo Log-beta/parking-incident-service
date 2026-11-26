@@ -1,3 +1,8 @@
+process.env.TURNSTILE_SECRET_KEY = "mock-turnstile-secret";
+process.env.TURNSTILE_EXPECTED_HOSTNAME = "localhost";
+process.env.TURNSTILE_EXPECTED_ACTION = "incident_submit";
+process.env.RATE_LIMIT_MAX = "200";
+
 const { test, before, after } = require("node:test");
 const assert = require("node:assert/strict");
 const { randomBytes } = require("node:crypto");
@@ -33,6 +38,50 @@ process.env.COGNITO_USERS_JSON = JSON.stringify({
 const originalFetch = globalThis.fetch;
 
 globalThis.fetch = async (input, options) => {
+  if (input === "https://challenges.cloudflare.com/turnstile/v0/siteverify") {
+    assert.equal(options.method, "POST");
+    assert.equal(options.body.get("secret"), "mock-turnstile-secret");
+
+    const token = options.body.get("response");
+
+    if (token === "mock-outage") {
+      throw new Error("Simulated Cloudflare outage");
+    }
+
+    if (token === "mock-malformed") {
+      return new Response("invalid JSON", { status: 200 });
+    }
+
+    if (token === "mock-expired") {
+      return Response.json({
+        success: false,
+        "error-codes": ["timeout-or-duplicate"]
+      });
+    }
+
+    if (token === "mock-config-error") {
+      return Response.json({
+        success: false,
+        "error-codes": ["invalid-input-secret"]
+      });
+    }
+
+    if (token === "mock-valid" ||
+        token === "mock-wrong-host" ||
+        token === "mock-wrong-action") {
+      return Response.json({
+        success: true,
+        hostname: token === "mock-wrong-host" ? "other.example" : "localhost",
+        action: token === "mock-wrong-action" ? "other_action" : "incident_submit"
+      });
+    }
+
+    return Response.json({
+      success: false,
+      "error-codes": ["invalid-input-response"]
+    });
+  }
+
   if (input === process.env.COGNITO_JWKS_URL) {
     return new Response(JSON.stringify({ keys: [jwk] }), {
       status: 200,
@@ -127,6 +176,7 @@ test("POST /api/incidents stores the signed-in user as owner when the body names
       Authorization: `Bearer ${token}`
     },
     body: JSON.stringify({
+      turnstile_token: "mock-valid",
       user_id: "user-2",
       description: "Vehicle blocking bay A1",
       vehicle_plate: "ABC123",
@@ -688,6 +738,7 @@ test("POST /api/incidents returns 409 for a duplicate incident", async (t) => {
       Authorization: `Bearer ${token}`
     },
     body: JSON.stringify({
+      turnstile_token: "mock-valid",
       description: "Vehicle blocking bay A1",
       vehicle_plate: "ABC123",
       spot_id: "A1",
@@ -742,6 +793,7 @@ test("POST /api/incidents rejects oversized descriptions before accessing Dynamo
       Authorization: `Bearer ${token}`
     },
     body: JSON.stringify({
+      turnstile_token: "mock-valid",
       description: "A".repeat(501),
       vehicle_plate: "ABC123",
       spot_id: "A1",
@@ -774,6 +826,7 @@ test("POST /api/incidents rejects unsafe input before accessing DynamoDB", async
       Authorization: `Bearer ${token}`
     },
     body: JSON.stringify({
+      turnstile_token: "mock-valid",
       description: "<script>alert(1)</script>",
       vehicle_plate: "ABC123",
       spot_id: "A1",
@@ -821,6 +874,7 @@ test("oversized request body returns a safe JSON error", async () => {
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
+      turnstile_token: "mock-valid",
       description: "a".repeat(200000)
     })
   });
@@ -1106,6 +1160,7 @@ test("successful incident creation generates a safe audit event", async (t) => {
       Authorization: `Bearer ${token}`
     },
     body: JSON.stringify({
+      turnstile_token: "mock-valid",
       description: "Private incident description",
       vehicle_plate: "AUDIT123",
       spot_id: "A1",
@@ -1166,6 +1221,7 @@ test("duplicate incident rejection generates a safe audit event", async (t) => {
       Authorization: `Bearer ${token}`
     },
     body: JSON.stringify({
+      turnstile_token: "mock-valid",
       description: "Private duplicate description",
       vehicle_plate: "DUP123",
       spot_id: "A1",
@@ -1241,3 +1297,43 @@ test("Permit verification accepts authenticated user and admin roles", async () 
     assert.equal(body.error.code, "RESERVATION_ID_REQUIRED");
   }
 });
+
+
+const turnstileCases = [
+  ["missing token", undefined, 400, "TURNSTILE_REQUIRED"],
+  ["oversized token", "x".repeat(2049), 400, "TURNSTILE_INVALID"],
+  ["invalid token", "mock-invalid", 400, "TURNSTILE_INVALID"],
+  ["expired or reused token", "mock-expired", 400, "TURNSTILE_INVALID"],
+  ["Cloudflare outage", "mock-outage", 503, "TURNSTILE_UNAVAILABLE"],
+  ["malformed provider response", "mock-malformed", 503, "TURNSTILE_UNAVAILABLE"],
+  ["invalid provider secret", "mock-config-error", 503, "TURNSTILE_UNAVAILABLE"],
+  ["incorrect hostname", "mock-wrong-host", 400, "TURNSTILE_INVALID"],
+  ["incorrect action", "mock-wrong-action", 400, "TURNSTILE_INVALID"]
+];
+
+for (const [scenario, challenge, status, code] of turnstileCases) {
+  test(`Turnstile rejects ${scenario} before database access`, async (t) => {
+    const db = require("../src/config/dynamodb");
+    const databaseCall = t.mock.method(db, "send", async () => ({}));
+    const token = createCognitoToken({ sub: "user-1", role: "user" });
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        description: "Turnstile security test",
+        vehicle_plate: "TEST123",
+        spot_id: "A1",
+        incident_type: "unauthorized_parking",
+        turnstile_token: challenge
+      })
+    });
+
+    assert.equal(response.status, status);
+    assert.equal((await response.json()).error.code, code);
+    assert.equal(databaseCall.mock.callCount(), 0);
+  });
+}

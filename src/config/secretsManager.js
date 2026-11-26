@@ -1,4 +1,4 @@
-﻿const {
+const {
   SecretsManagerClient,
   GetSecretValueCommand
 } = require("@aws-sdk/client-secrets-manager");
@@ -25,7 +25,7 @@ async function loadRuntimeConfig() {
       "RATE_LIMIT_WINDOW_MS",
       "ALLOCATION_URL",
       "INTERNAL_TOKEN",
-      "COGNITO_USERS_JSON"
+      "COGNITO_USERS_JSON", "TURNSTILE_SECRET_KEY", "TURNSTILE_EXPECTED_HOSTNAME", "TURNSTILE_EXPECTED_ACTION"
     ];
 
     for (const key of allowed) {

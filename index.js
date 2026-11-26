@@ -1,3 +1,4 @@
+const { verifyTurnstile } = require("./src/services/turnstile");
 const { auditLog } = require("./src/utils/auditLogger");
 const { errorHandler } = require("./src/middleware/errorHandler");
 const { getAdminReports } = require("./src/controllers/adminReportsController");
@@ -64,6 +65,38 @@ app.post("/api/incidents", requireAuth, async (req, res) => {
   const error = validateIncident(req.body);
   if (error) {
     return res.status(400).json({ success: false, error });
+  }
+
+  const verification = await verifyTurnstile(req.body.turnstile_token);
+
+  if (verification !== "verified") {
+    const unavailable = verification === "unavailable";
+
+    const code = unavailable
+      ? "TURNSTILE_UNAVAILABLE"
+      : verification === "required"
+        ? "TURNSTILE_REQUIRED"
+        : "TURNSTILE_INVALID";
+
+    const status = unavailable ? 503 : 400;
+
+    auditLog("TURNSTILE_VERIFICATION_FAILED", {
+      userId: req.auth.userId,
+      role: req.auth.role,
+      statusCode: status,
+      outcome: unavailable ? "failure" : "denied",
+      reason: code
+    });
+
+    return res.status(status).json({
+      success: false,
+      error: {
+        code,
+        message: unavailable
+          ? "Verification is temporarily unavailable."
+          : "Complete a new security challenge and try again."
+      }
+    });
   }
 
   const { description, vehicle_plate, spot_id, incident_type } = req.body;

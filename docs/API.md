@@ -684,3 +684,37 @@ The proposed plate-and-spot lookup API is pending Allocation
 implementation and contract confirmation.
 
 Verification: 140 automated tests passed.
+
+## Cloudflare Turnstile Integration
+
+POST /api/incidents requires a turnstile_token field in
+addition to the existing incident fields and Cognito access token.
+
+The backend verifies the challenge through Cloudflare Siteverify
+before writing any incident to DynamoDB.
+
+Error responses:
+- 400 TURNSTILE_REQUIRED: missing verification token.
+- 400 TURNSTILE_INVALID: invalid, expired or reused token.
+- 503 TURNSTILE_UNAVAILABLE: provider or configuration failure.
+
+Configuration:
+- TURNSTILE_SECRET_KEY: private backend credential.
+- TURNSTILE_EXPECTED_HOSTNAME: expected frontend hostname.
+- TURNSTILE_EXPECTED_ACTION: incident_submit.
+
+The runtime Secrets Manager loader supports these variables.
+The frontend must only receive the public widget site key.
+
+Individual verification:
+- 149 automated backend tests passed.
+- Live Cloudflare successful verification passed.
+- Live Cloudflare failed verification passed.
+- Live Cloudflare already-redeemed token test passed.
+- Development configuration retrieved from Secrets Manager.
+
+Official development keys were used for live verification.
+These results do not demonstrate production bot protection.
+
+Frontend widget integration and final shared runtime
+configuration remain pending.

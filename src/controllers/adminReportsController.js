@@ -2,20 +2,24 @@
 
 const allowedStatuses = new Set(["open", "under_review", "resolved"]);
 
-function readAdminCursor(cursor, status) {
+function readAdminCursor(cursor, status, vehiclePlate) {
   if (typeof cursor !== "string" || !/^[A-Za-z0-9_-]+$/.test(cursor)) {
     return null;
   }
 
   try {
     const page = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
+
+    // Earlier status-only cursors omitted vehicle_plate.
     if (
       page?.status !== (status ?? null) ||
+      (page.vehicle_plate ?? null) !== (vehiclePlate ?? null) ||
       typeof page.incident_id !== "string" ||
       !page.incident_id.trim()
     ) {
       return null;
     }
+
     return { incident_id: page.incident_id };
   } catch {
     return null;
@@ -23,7 +27,7 @@ function readAdminCursor(cursor, status) {
 }
 
 async function getAdminReports(req, res) {
-  const { status, cursor } = req.query;
+  const { status, cursor, vehicle_plate } = req.query;
 
   if (status !== undefined && !allowedStatuses.has(status)) {
     return res.status(400).json({
@@ -32,22 +36,36 @@ async function getAdminReports(req, res) {
     });
   }
 
+  if (vehicle_plate !== undefined &&
+      (typeof vehicle_plate !== "string" || !vehicle_plate.trim())) {
+    return res.status(400).json({
+      success: false,
+      error: { code: "INVALID_VEHICLE_PLATE", message: "Supply a nonblank vehicle plate or omit it." }
+    });
+  }
+
+  const vehiclePlate = vehicle_plate?.trim();
   let startKey;
   if (cursor !== undefined) {
-    startKey = readAdminCursor(cursor, status);
+    startKey = readAdminCursor(cursor, status, vehiclePlate);
     if (!startKey) {
       return res.status(400).json({
         success: false,
-        error: { code: "INVALID_CURSOR", message: "Invalid cursor for this status filter." }
+        error: { code: "INVALID_CURSOR", message: "Invalid cursor for the selected filters." }
       });
     }
   }
 
   try {
-    const { items, lastEvaluatedKey } = await listAdminReports(status, startKey);
+    const { items, lastEvaluatedKey } = await listAdminReports(status, startKey, vehiclePlate);
     let nextCursor = null;
+
     if (lastEvaluatedKey) {
-      const page = { incident_id: lastEvaluatedKey.incident_id, status: status ?? null };
+      const page = {
+        incident_id: lastEvaluatedKey.incident_id,
+        status: status ?? null,
+        vehicle_plate: vehiclePlate ?? null
+      };
       nextCursor = Buffer.from(JSON.stringify(page)).toString("base64url");
     }
 

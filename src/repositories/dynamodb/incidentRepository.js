@@ -79,17 +79,33 @@ async function resolveIncident(incidentId, adminId, resolutionNotes) {
   return result.Attributes;
 }
 
-async function listAdminReports(status, startKey) {
+async function listAdminReports(status, startKey, vehiclePlate) {
   const input = {
     TableName: tableName,
     Limit: 25,
     ExclusiveStartKey: startKey
   };
 
+  const filters = [];
+  const names = {};
+  const values = {};
+
   if (status !== undefined) {
-    input.FilterExpression = "#status = :status";
-    input.ExpressionAttributeNames = { "#status": "status" };
-    input.ExpressionAttributeValues = { ":status": status };
+    filters.push("#status = :status");
+    names["#status"] = "status";
+    values[":status"] = status;
+  }
+
+  if (vehiclePlate !== undefined) {
+    filters.push("#plate = :plate");
+    names["#plate"] = "vehicle_plate";
+    values[":plate"] = vehiclePlate;
+  }
+
+  if (filters.length > 0) {
+    input.FilterExpression = filters.join(" AND ");
+    input.ExpressionAttributeNames = names;
+    input.ExpressionAttributeValues = values;
   }
 
   const result = await db.send(new ScanCommand(input));

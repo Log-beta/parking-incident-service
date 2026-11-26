@@ -510,3 +510,72 @@ test("an admin can continue past an empty filtered page to find an open report",
   assert.deepEqual((await second.json()).data, { items: [openReport], next_cursor: null });
   assert.equal(read.mock.callCount(), 2);
 });
+
+test("an admin can search incident reports by exact vehicle plate", async (t) => {
+  const db = require("../src/config/dynamodb");
+  const matching = { incident_id: "inc-1", user_id: "user-1", vehicle_plate: "ABC123" };
+  const other = { incident_id: "inc-2", user_id: "user-2", vehicle_plate: "XYZ789" };
+
+  const read = t.mock.method(db, "send", async (command) => {
+    const plate = command.input.ExpressionAttributeValues?.[":plate"];
+    const items = [matching, other];
+    return { Items: plate === undefined ? items : items.filter(item => item.vehicle_plate === plate) };
+  });
+
+  const token = jwt.sign({ sub: "admin-1", role: "admin" }, process.env.JWT_SECRET, {
+    algorithm: "HS256",
+    issuer: process.env.JWT_ISSUER,
+    audience: process.env.JWT_AUDIENCE,
+    expiresIn: "5m"
+  });
+
+  const response = await fetch(`${url}/admin/reports?vehicle_plate=ABC123`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.deepEqual(body.data.items, [matching]);
+
+  const input = read.mock.calls[0].arguments[0].input;
+  assert.equal(input.ExpressionAttributeNames["#plate"], "vehicle_plate");
+  assert.equal(input.FilterExpression, "#plate = :plate");
+});
+
+test("admin search combines status and plate and rejects a cursor after the plate changes", async (t) => {
+  const db = require("../src/config/dynamodb");
+  const read = t.mock.method(db, "send", async (command) => {
+    const input = command.input;
+    assert.equal(input.FilterExpression, "#status = :status AND #plate = :plate");
+    assert.deepEqual(input.ExpressionAttributeValues, {
+      ":status": "open",
+      ":plate": "ABC123"
+    });
+    return { Items: [], LastEvaluatedKey: { incident_id: "inc-25" } };
+  });
+
+  const token = jwt.sign({ sub: "admin-1", role: "admin" }, process.env.JWT_SECRET, {
+    algorithm: "HS256",
+    issuer: process.env.JWT_ISSUER,
+    audience: process.env.JWT_AUDIENCE,
+    expiresIn: "5m"
+  });
+  const headers = { Authorization: `Bearer ${token}` };
+  const endpoint = `${url}/admin/reports`;
+
+  const first = await fetch(`${endpoint}?status=open&vehicle_plate=ABC123`, { headers });
+  assert.equal(first.status, 200);
+  const { data } = await first.json();
+  assert.ok(data.next_cursor);
+
+  const changed = new URLSearchParams({
+    status: "open",
+    vehicle_plate: "XYZ789",
+    cursor: data.next_cursor
+  });
+  const second = await fetch(`${endpoint}?${changed}`, { headers });
+
+  assert.equal(second.status, 400);
+  assert.equal((await second.json()).error.code, "INVALID_CURSOR");
+  assert.equal(read.mock.callCount(), 1);
+});

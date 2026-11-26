@@ -1,166 +1,282 @@
 # Parking Incident Service
 
-A microservice responsible for parking incident management and permit
-verification within the Cloud-Based Parking Allocation Management System.
+A microservice responsible for incident reporting, parking permit
+verification and administrative investigations within the Cloud-Based
+Parking Allocation Management System.
 
-## Features
+## Business Functions
 
-- Create parking incident reports.
-- Retrieve incident reports by ID.
-- Verify parking reservations through the Allocation microservice.
-- Detect invalid reservations, vehicle plate mismatches, and parking spot mismatches.
-- Store incident reports and permit verification logs in DynamoDB.
-- Handle external service and database failures.
-- Support configurable ports and service instance identification.
+- Submit and retrieve parking incident reports.
+- View personal incident report history.
+- Prevent duplicate incident submissions through atomic DynamoDB transactions.
+- Verify parking permits using reservation IDs.
+- Investigate reservations using vehicle plates and parking spot IDs.
+- Filter and paginate incident reports through administrator endpoints.
+- Manage incident investigations through controlled status transitions.
+- Record permit verification attempts.
+- Protect incident submissions using Cloudflare Turnstile.
 
 ## Technology Stack
 
-- Node.js
-- Express.js
-- Amazon DynamoDB
-- AWS SDK v3
-- Docker
-- Floci
-- Node.js Test Runner
+| Technology | Purpose |
+|---|---|
+| Node.js and Express | REST API and business logic |
+| Amazon DynamoDB | Persistent NoSQL storage |
+| Amazon Cognito | Authentication and role-based authorization |
+| AWS Secrets Manager | Secure runtime configuration |
+| AWS IAM | Scoped cloud permissions |
+| Amazon CloudWatch | Logging infrastructure |
+| Amazon ECS / Fargate | Target container deployment |
+| Application Load Balancer | Target shared load balancing |
+| Application Auto Scaling | Target scaling configuration |
+| Amazon VPC | Target shared network infrastructure |
+| Docker | Containerization |
+| Floci | Local AWS-compatible environment |
+| Cloudflare Turnstile | Automated submission protection |
+| Grafana k6 | Performance testing |
+| Node.js Test Runner | Automated testing |
+| GitHub | Version control and collaboration |
 
 ## Project Structure
 
-```text
-parking-incident-service/
-├── docs/
-│   └── API.md
-├── src/
-│   ├── config/
-│   │   └── dynamodb.js
-│   ├── controllers/
-│   │   └── permitController.js
-│   ├── repositories/
-│   │   └── dynamodb/
-│   │       ├── incidentRepository.js
-│   │       └── permitVerificationRepository.js
-│   ├── services/
-│   │   ├── allocationClient.js
-│   │   └── permitVerification.js
-│   └── validation/
-│       └── incidentValidation.js
-├── test/
-├── index.js
-├── package.json
-└── README.md
-```
+    parking-incident-service/
+    |-- docs/
+    |-- infra/
+    |   |-- autoscaling/
+    |   |-- cloudwatch/
+    |   |-- dynamodb/
+    |   |-- ecs/
+    |   |-- iam/
+    |   |-- local-scaling/
+    |   `-- secretsmanager/
+    |-- src/
+    |   |-- config/
+    |   |-- controllers/
+    |   |-- middleware/
+    |   |-- repositories/
+    |   |-- services/
+    |   |-- utils/
+    |   `-- validation/
+    |-- test/
+    |-- bootstrap.js
+    |-- index.js
+    |-- Dockerfile
+    |-- package.json
+    `-- README.md
 
 ## Prerequisites
 
-- Node.js
-- npm
-- Docker
-- Floci
-- AWS CLI with a configured Floci profile
-- Required DynamoDB tables
+- Node.js 22 or a compatible newer version.
+- npm.
+- Docker.
+- Floci.
+- AWS CLI with a configured Floci profile.
+- Required DynamoDB tables and indexes.
+- Runtime configuration stored in Secrets Manager.
+- Cognito configuration and identity mappings.
+- Grafana k6 for performance benchmarking.
 
 ## Installation
 
-```powershell
-npm.cmd install
-```
+    npm.cmd ci
 
-## Environment Variables
+## Configuration
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `PORT` | `3003` | Service port. |
-| `INSTANCE_ID` | Auto-generated | Unique service instance identifier. |
-| `AWS_REGION` | `us-east-1` | AWS region. |
-| `AWS_PROFILE` | Not explicitly set | AWS credentials profile. |
-| `DYNAMODB_ENDPOINT` | `http://localhost:4566` | Local DynamoDB endpoint. |
-| `INCIDENT_REPORTS_TABLE` | `IncidentReports` | Incident reports table. |
-| `PERMIT_VERIFICATION_LOGS_TABLE` | `PermitVerificationLogs` | Verification logs table. |
-| `ALLOCATION_URL` | `http://localhost:3001` | Allocation microservice URL. |
-| `INTERNAL_TOKEN` | None | Authentication token required for Allocation requests. |
+Refer to .env.example for supported configuration variables.
+
+The application requires Cognito configuration and identity mappings.
+Runtime configuration is retrieved from Secrets Manager before the
+application starts.
+
+Important configuration groups:
+
+| Configuration | Variables |
+|---|---|
+| Service | PORT, INSTANCE_ID |
+| AWS | AWS_REGION, AWS_PROFILE |
+| Database | DYNAMODB_ENDPOINT and table name variables |
+| Authentication | AUTH_MODE and COGNITO_* variables |
+| Secrets | SECRETS_MANAGER_ENDPOINT, RUNTIME_SECRET_ID |
+| Allocation | ALLOCATION_URL, INTERNAL_TOKEN |
+| Bot protection | TURNSTILE_SECRET_KEY and expected hostname/action |
+| Rate limiting | RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS |
+
+Environment variables must be supplied through the shell, container
+configuration or deployment environment. The .env.example file is
+a reference and is not loaded automatically.
+
+Never commit actual credentials, private identity mappings or tokens.
 
 ## Running Locally
 
-Ensure Docker and Floci are running and the required DynamoDB tables exist.
+Start Docker and Floci, provision the required resources and configure
+the environment before starting the service.
 
-```powershell
-$env:AWS_PROFILE = "floci"
-$env:PORT = "3003"
-$env:PERMIT_VERIFICATION_LOGS_TABLE = "PermitVerificationLogs"
+    npm.cmd start
 
-npm.cmd start
-```
+The default service address is:
 
-The service is available at:
+    http://localhost:3003
 
-```text
-http://localhost:3003
-```
+Verify service availability:
 
-To enable live permit verification, configure `ALLOCATION_URL` and
-`INTERNAL_TOKEN` according to the Allocation microservice configuration.
+    curl.exe http://localhost:3003/health
+
+The application must be started through bootstrap.js using npm start.
+Direct execution of index.js is intentionally rejected.
+
+## Docker
+
+Build the container image:
+
+    docker build -t parking-incidents:latest .
+
+The image uses Node.js 22 Alpine, production dependencies, a non-root
+user and the secure bootstrap startup process.
+
+Container execution requires the appropriate runtime configuration.
 
 ## API Endpoints
 
-| Method | Endpoint | Description |
-| --- | --- | --- |
-| GET | `/` | Service welcome message. |
-| GET | `/health` | Service health and instance information. |
-| POST | `/api/incidents` | Create an incident report. |
-| GET | `/api/incidents/:id` | Retrieve an incident report. |
-| POST | `/api/incidents/verify` | Verify a parking permit. |
+| Method | Endpoint | Authorization |
+|---|---|---|
+| GET | / | Public |
+| GET | /health | Public |
+| POST | /api/incidents | Authenticated |
+| GET | /api/incidents | Authenticated, owner-scoped |
+| GET | /api/incidents/:id | Authenticated, owner only |
+| POST | /api/incidents/verify | Authenticated |
+| GET | /api/incidents/admin/reports | Administrator |
+| PATCH | /api/incidents/:id/status | Administrator |
+| GET | /api/incidents/:id/reservation-check | Administrator |
 
-For detailed API documentation, see [docs/API.md](docs/API.md).
+Incident submission additionally requires successful Turnstile
+verification.
 
-## DynamoDB Tables
+Incident status transitions:
 
-| Table | Partition Key | Key Type |
-| --- | --- | --- |
-| `IncidentReports` | `incident_id` | String |
-| `PermitVerificationLogs` | `verification_id` | String |
+    open -> under_review -> resolved
 
-## Automated Testing
+Reservation assessments do not automatically modify incident status
+or determine that a vehicle is illegally parked.
 
-Run the automated test suite:
+## DynamoDB Resources
 
-```powershell
-npm.cmd test
-```
+| Table | Partition Key |
+|---|---|
+| IncidentReports | incident_id |
+| IncidentDuplicateKeys | duplicate_key |
+| PermitVerificationLogs | verification_id |
 
-### Current Test Results
+IncidentReports includes the user_id-created_at-index global
+secondary index for owner-scoped report retrieval.
 
-- Total tests: 28
-- Passed: 28
-- Failed: 0
-- Pass rate: 100%
+Duplicate incident prevention uses a 10-minute expiration window
+and conditional transactional writes.
 
-The test suite covers incident validation, Allocation communication,
-permit verification, repository operations, controller integration,
-and database failure handling.
+Separate test tables are used during isolated development and
+performance testing. They are not intended for final deployment.
 
-External dependencies are mocked during automated testing.
+## Security
 
-## Current Development Status
+- RS256 Cognito access token validation.
+- JWT issuer, expiration, client ID and token type verification.
+- Server-side identity mapping.
+- Role-based authorization and incident ownership enforcement.
+- Input validation and request body size restrictions.
+- Per-worker sliding-window rate limiting.
+- Secure HTTP response headers.
+- Structured audit logging with restricted fields.
+- Secrets Manager runtime configuration retrieval.
+- Scoped IAM task and execution roles.
+- Non-root Docker execution.
+- Server-side Cloudflare Turnstile verification.
+- Authenticated inter-service requests with timeout handling.
 
-- [x] Express microservice setup
-- [x] Health endpoint
-- [x] Service instance identification
-- [x] DynamoDB configuration
-- [x] Incident report creation
-- [x] Incident report retrieval
-- [x] Incident input validation
-- [x] Allocation client implementation
-- [x] Permit verification logic
-- [x] Permit verification logging
-- [x] Automated testing
-- [x] API documentation
-- [ ] Live Allocation microservice integration
+## Testing
 
-## Known Limitations
+Run the automated backend test suite:
 
-- Live integration with the team's Allocation microservice is pending.
-- Verification logging failures do not interrupt API responses,
-  but may result in missing audit records.
-- Malformed verification requests are not logged.
+    npm.cmd test
+
+Audit production dependencies:
+
+    npm.cmd audit --omit=dev
+
+### Latest Recorded Results
+
+| Metric | Result |
+|---|---|
+| Automated tests | 171 |
+| Passed | 171 |
+| Failed | 0 |
+| Known production dependency vulnerabilities | 0 at time of audit |
+| Docker runtime smoke test | Passed |
+| Round-robin distribution | 9/9 requests successful |
+| Worker failover | 24/24 requests successful |
+
+External dependencies are mocked where appropriate in automated tests.
+Additional local Floci and Docker runtime tests were conducted.
+
+## Horizontal Scaling
+
+Authenticated read benchmarks were conducted using 20 virtual users
+over 30 seconds per configuration.
+
+| Metric | Single Worker | Three Workers |
+|---|---|---|
+| Total requests | 20,667 | 39,929 |
+| Requests per second | 688.50 | 1,330.53 |
+| Average latency | 28.88ms | 14.84ms |
+| P95 latency | 37.17ms | 20.31ms |
+| Failed requests | 0 | 0 |
+
+The three-worker configuration demonstrated approximately 93.25%
+higher throughput and 48.61% lower average latency.
+
+The experiment used local Node.js workers, a round-robin proxy and
+shared Floci DynamoDB storage. It was not a native Fargate benchmark.
+
+## Cloud Infrastructure Status
+
+| Component | Status |
+|---|---|
+| DynamoDB | Provisioned and locally tested |
+| Secrets Manager | Provisioned and runtime retrieval tested |
+| IAM | Roles and policies provisioned; enforcement pending |
+| CloudWatch | Log group and test log ingestion verified |
+| Cognito | Backend implemented; shared pool integration pending |
+| ECS | Task definition registered in Floci |
+| Fargate | Deployment configuration prepared |
+| Load balancing | Local equivalent tested |
+| Auto Scaling | Policy prepared; manual horizontal scaling tested |
+| VPC | Awaiting shared team infrastructure |
+
+## Documentation
+
+- [API Reference](docs/API.md)
+- [Integration Guide](docs/INTEGRATION.md)
+- [Horizontal Scaling and Fault Tolerance](docs/SCALING.md)
+- [Security Implementation](docs/SECURITY.md)
+- [Cloud Infrastructure and Deployment](docs/DEPLOYMENT.md)
+- [Testing and Verification](docs/TESTING.md)
+
+## Known Limitations and Pending Integration
+
+- Live integration with both Allocation reservation APIs.
+- Shared Cognito user pool and identity configuration.
+- Shared ECS cluster, VPC and load balancer integration.
+- Native Fargate execution and automatic ECS scaling.
+- Actual IAM permission enforcement.
+- Automatic application log delivery to CloudWatch.
+- Proxy-aware client identification for rate limiting.
+- Production Turnstile configuration and browser verification.
+- Verification logging failures do not interrupt permit responses.
+- Shared frontend development.
+- Final deployment exclusion of development-only resources.
+
+The individual backend has been implemented and tested locally.
+Full integrated system deployment remains pending.
 
 ## License
 

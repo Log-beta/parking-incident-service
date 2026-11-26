@@ -567,3 +567,21 @@ Logs are written to standard output for subsequent CloudWatch integration.
 Verification: 136 automated tests passed, 0 failed.
 CloudWatch delivery and live Cognito integration remain pending.
 
+
+## AWS Secrets Manager
+
+Secret name: parking/incidents/runtime
+
+Runtime configuration is retrieved from Secrets Manager
+before the Express application starts through bootstrap.js.
+
+Supported configuration includes rate limits, Allocation
+service URL, internal service credentials and Cognito
+identity mapping.
+
+Secret creation and application retrieval were verified
+against the local Floci environment.
+
+Actual shared credentials remain pending.
+Secret values are not written to application logs.
+

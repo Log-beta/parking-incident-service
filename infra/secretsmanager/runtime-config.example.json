@@ -1,0 +1,5 @@
+{
+  "RATE_LIMIT_MAX": "60",
+  "RATE_LIMIT_WINDOW_MS": "60000",
+  "ALLOCATION_URL": "http://localhost:3001"
+}
